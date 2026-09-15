@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>99 Oakland Hill inspection</title>
+<script src="config.js"></script>
 <style>
   :root { --bg:#eef0f3; --card:#fff; --ink:#1d2733; --muted:#5f6b78; --line:#d5dae0; --blue:#1f5f99;
           --good:#1b7a3a; --wear:#a86400; --dmg:#b3261e; }
@@ -82,7 +83,7 @@
     if (!box) { document.addEventListener('DOMContentLoaded', function () { showStartupProblem(msg); }); return; }
     box.innerHTML = '<div style="background:#fff;border:1px solid #d5dae0;border-radius:10px;padding:14px;margin:12px">' +
       '<h2 style="margin:0 0 8px;font-size:18px">The form did not start</h2><p style="margin:0 0 8px"></p>' +
-      '<p style="margin:0;color:#5f6b78;font-size:14px">Page version 2026-09-15h. Send a screenshot of this message if it keeps happening.</p></div>';
+      '<p style="margin:0;color:#5f6b78;font-size:14px">Page version 2026-09-15i. Send a screenshot of this message if it keeps happening.</p></div>';
     box.querySelector('p').textContent = msg;
   }
   window.addEventListener('error', function (e) {
@@ -103,8 +104,8 @@
 <div id="footer" class="footer" hidden></div>
 
 <script>
-/* Paste the Web app URL from Apps Script (Deploy > Manage deployments) between the quotes. It ends in /exec. */
-const API_URL = 'https://script.google.com/macros/s/AKfycbwTNZWz69Boi7N_E8FhyL2nrN1WjxsFBxLaZ8z6pXavyg9HHlLghCYLGkv_Gz25HH1B/exec';
+/* The Web app URL lives in config.js next to this file, so index.html can be replaced without re-pasting it. */
+const API_URL = String(window.INSPECTION_API_URL || '').trim();
 
 const CFG = { property: '99 Oakland Hill', maxAge: 3, requireGps: true, tz: 'Africa/Johannesburg', maxPhotos: 3 };
 const RATINGS = ['Good', 'Wear', 'Damage'];
@@ -147,18 +148,46 @@ function gpsText(g) {
 }
 
 /* ---------- server calls ---------- */
-function call(action, extra) {
+function newKey() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
+
+/** Error text for the agent. */
+function errText(e) {
+  if (e && e.glitch) return 'Google did not send an answer back. Your last change may have saved. Wait a moment and try again.';
+  if (e && e.network) return 'No connection. Check signal and try again.';
+  return (e && e.message) || 'Something went wrong.';
+}
+
+/**
+ * Google sometimes loses the answer on the way back (a 404 page from script.googleusercontent.com)
+ * even though the script ran. Try again a few times before giving up.
+ */
+async function call(action, extra) {
+  const tries = [0, 1500, 4000, 8000];
+  let last;
+  for (let i = 0; i < tries.length; i++) {
+    if (tries[i]) await sleep(tries[i]);
+    try { return await callOnce(action, extra); }
+    catch (e) {
+      last = e;
+      if (!e.glitch) throw e;
+    }
+  }
+  last.network = true;   // the save queue keeps retrying these
+  throw last;
+}
+
+function callOnce(action, extra) {
   const body = JSON.stringify(Object.assign({ pin: S.pin, action: action }, extra || {}));
   const waitMs = action === 'submit' ? 400000 : 90000;
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = ctrl ? setTimeout(() => ctrl.abort(), waitMs) : null;
-  const fail = (msg, network) => { const e = new Error(msg); if (network) e.network = true; else e.server = true; return e; };
+  const fail = (msg, kind) => { const e = new Error(msg); e[kind || 'server'] = true; return e; };
   // text/plain keeps this a simple request, which Apps Script accepts from another site.
   return fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: body,
     redirect: 'follow', signal: ctrl ? ctrl.signal : undefined })
-    .catch(() => { throw fail('No connection', true); })
+    .catch(() => { throw fail('No connection', 'network'); })
     .then(resp => {
-      if (resp.status >= 500) throw fail('The server is busy', true);
+      if (resp.status >= 500) throw fail('The server is busy', 'network');
       return resp.text().then(text => ({ text: text, status: resp.status, from: resp.url }));
     })
     .then(ans => {
@@ -170,9 +199,9 @@ function call(action, extra) {
         try { host = new URL(ans.from).host; } catch (y) { host = String(ans.from || 'unknown'); }
         const start = String(text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220);
         throw fail('The script sent back an unexpected answer. Details: status ' + ans.status + ' from ' + host +
-          ', answer: ' + (start ? '"' + start + '"' : 'empty'), false);
+          ', answer: ' + (start ? '"' + start + '"' : 'empty'), 'glitch');
       }
-      if (r && r.error) throw fail(r.error, false);
+      if (r && r.error) throw fail(r.error, 'server');
       return r;
     })
     .finally(() => { if (timer) clearTimeout(timer); });
@@ -491,7 +520,7 @@ async function pinGo() {
   S.pin = ($('#pin').value || '').trim();
   if (!S.pin) return;
   try { await loadDrafts(); store('set', 'pin', S.pin); watchGps(); await resumeOrHome(); }
-  catch (e) { $('#pinErr').textContent = e.network ? 'No connection. Check signal and try again.' : e.message; }
+  catch (e) { $('#pinErr').textContent = errText(e); }
 }
 async function loadDrafts() {
   const r = await call('listDrafts');
@@ -499,6 +528,7 @@ async function loadDrafts() {
 }
 function newInspection() {
   S.startDraft = { AgentName: local('get', 'agentName') || '', AgentEmail: local('get', 'agentEmail') || '' };
+  S.startKey = '';
   go('start', { editStart: false });
 }
 /** If the phone reloaded the page mid-inspection, go straight back to where the agent was. */
@@ -520,7 +550,7 @@ async function openDraft(id) {
   if (S.busy) return;
   S.busy = true; toast('Opening inspection');
   try { applyLoad(await call('load', { id: id })); go('rooms'); watchGps(); }
-  catch (e) { alert(e.network ? 'No connection. Check signal and try again.' : e.message); }
+  catch (e) { alert(errText(e)); }
   S.busy = false;
 }
 function applyLoad(r) {
@@ -558,12 +588,14 @@ async function startGo() {
       if (CFG.requireGps) throw new Error('Location is needed. Allow location for this page and turn on GPS, then try again.');
     }
     local('set', 'agentName', d.AgentName); local('set', 'agentEmail', d.AgentEmail);
-    applyLoad(await call('start', { data: Object.assign({}, d, { gps: gps }) }));
+    if (!S.startKey) S.startKey = newKey();
+    applyLoad(await call('start', { key: S.startKey, data: Object.assign({}, d, { gps: gps }) }));
+    S.startKey = '';
     S.busy = false;
     go('rooms');
   } catch (e) {
     S.busy = false; btn.disabled = false; btn.textContent = S.editStart ? 'Save details' : 'Start inspection';
-    err.textContent = e.network ? 'No connection. Check signal and try again.' : e.message;
+    err.textContent = errText(e);
   }
 }
 
@@ -641,6 +673,7 @@ async function takePhoto(id) {
   freeCanvas(thumbCanvas);
   shot.canvas = null;
 
+  const photoKey = newKey();
   const p = { thumb: thumb, pending: true, takenAt: shot.takenAt.toISOString(), takenAtText: fmtSA(shot.takenAt),
     lat: gps ? gps.lat : null, lng: gps ? gps.lng : null, acc: gps ? gps.acc : null, gpsText: gpsText(gps), source: shot.source };
   r.photos.push(p);
@@ -650,7 +683,7 @@ async function takePhoto(id) {
   enqueue({
     photo: true,
     run: async () => {
-      const up = await call('uploadPhoto', { id: inspId, data: { itemId: id, full: full, small: small, takenAt: p.takenAt } });
+      const up = await call('uploadPhoto', { id: inspId, key: photoKey, data: { itemId: id, full: full, small: small, takenAt: p.takenAt } });
       full = null; small = null;
       Object.assign(p, up, { pending: false });
       renderItem(id);
@@ -896,7 +929,7 @@ async function submitInspection() {
     go('done', { doneInfo: r });
   } catch (e) {
     ov.remove();
-    alert(e.network ? 'Could not reach the server. Nothing is lost. Check signal and tap Submit again.' : 'Not submitted: ' + e.message);
+    alert(e.network ? 'Could not confirm the submit. Nothing is lost. Check signal and tap Submit again. If it was already submitted, it will say so.' : 'Not submitted: ' + e.message);
   }
 }
 
@@ -904,16 +937,18 @@ window.addEventListener('error', e => toast('Something went wrong: ' + e.message
 
 /* ---------- start ---------- */
 (async function init() {
-  const PAGE_VERSION = '2026-09-15h';
+  const PAGE_VERSION = '2026-09-15i';
   if (API_URL.indexOf('https://script.google.com/') !== 0 || !/\/exec$/.test(API_URL)) {
-    return showStartupProblem('The Web app URL is not set in index.html. In GitHub, edit index.html and paste the URL ending in /exec into API_URL (around line 107), then commit. The change can take a few minutes to show.');
+    return showStartupProblem('The Web app URL is not set. In GitHub, check there is a file called config.js next to index.html, with your URL ending in /exec between the quotes. Commit, wait a few minutes, then reload.');
   }
   let cfg;
   try { cfg = await call('config'); }
   catch (e) {
-    return showStartupProblem(e.network
-      ? 'Could not reach the script. Check signal, then reload. If this keeps happening, check the Web app URL in index.html and that the deployment has access set to Anyone.'
-      : 'Could not load settings from the script. ' + e.message);
+    return showStartupProblem(e.glitch
+      ? 'Google did not send an answer back after several tries. Reload the page. ' + e.message
+      : e.network
+        ? 'Could not reach the script. Check signal, then reload. If this keeps happening, check the URL in config.js and that the deployment has access set to Anyone.'
+        : 'Could not load settings from the script. ' + e.message);
   }
   if (!cfg || cfg.version !== PAGE_VERSION) {
     return showStartupProblem('Code.gs and index.html are from different versions (script: ' +
