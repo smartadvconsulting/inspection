@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>99 Oakland Hill inspection</title>
+<style>
+  :root { --bg:#eef0f3; --card:#fff; --ink:#1d2733; --muted:#5f6b78; --line:#d5dae0; --blue:#1f5f99;
+          --good:#1b7a3a; --wear:#a86400; --dmg:#b3261e; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system, system-ui, "Segoe UI", Roboto, Arial, sans-serif; background:var(--bg);
+         color:var(--ink); font-size:16px; line-height:1.35; }
+  header { position:sticky; top:0; z-index:5; background:#24303c; color:#fff; padding:10px 12px; display:flex; align-items:center; gap:10px; }
+  header h1 { font-size:16px; margin:0; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  header button { background:none; border:1px solid rgba(255,255,255,.45); color:#fff; border-radius:6px; padding:6px 10px; font-size:14px; }
+  #sync { font-size:12px; padding:4px 8px; border-radius:10px; background:#3b4957; white-space:nowrap; }
+  #sync.warn { background:var(--wear); }
+  main { padding:12px; max-width:640px; margin:0 auto 96px; }
+  h2 { font-size:18px; margin:0 0 8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px; }
+  label { display:block; font-size:14px; color:var(--muted); margin:12px 0 4px; }
+  input[type=text], input[type=email], input[type=number], input[type=password], textarea {
+    width:100%; padding:11px; border:1px solid var(--line); border-radius:8px; font-size:16px; font-family:inherit; background:#fff; color:var(--ink); }
+  textarea { min-height:72px; resize:vertical; }
+  .btn { display:block; width:100%; padding:14px; border-radius:9px; border:0; background:var(--blue); color:#fff; font-size:16px; font-weight:600; margin-top:12px; }
+  .btn.sec { background:#fff; color:var(--blue); border:1px solid var(--blue); }
+  .btn:disabled { background:#a3adb8; color:#f3f5f7; }
+  .seg { display:flex; gap:6px; }
+  .seg button { flex:1; padding:11px 4px; border:1px solid var(--line); background:#fff; border-radius:8px; font-size:15px; color:var(--ink); }
+  .seg button.on { background:var(--blue); color:#fff; border-color:var(--blue); }
+  .row2 { display:flex; gap:10px; } .row2 > div { flex:1; min-width:0; }
+  .bar { height:8px; background:#dde2e8; border-radius:4px; overflow:hidden; margin-top:8px; }
+  .bar i { display:block; height:100%; background:var(--good); }
+  .muted { color:var(--muted); font-size:14px; }
+  .err { color:var(--dmg); font-size:14px; margin-top:8px; min-height:1px; }
+  .room { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px; background:#fff; border:1px solid var(--line);
+          border-radius:10px; margin-bottom:8px; width:100%; font-size:16px; text-align:left; color:var(--ink); }
+  .room .done { color:var(--good); font-weight:600; font-size:14px; }
+  .room .left { color:var(--muted); font-size:14px; white-space:nowrap; }
+  .item { background:#fff; border:1px solid var(--line); border-left:5px solid #c3c9d1; border-radius:10px; padding:12px; margin-bottom:10px; }
+  .item.ok { border-left-color:var(--good); }
+  .item .ref { font-size:12px; color:var(--muted); }
+  .item .name { font-weight:600; margin:1px 0 2px; }
+  .item .hint { font-size:14px; color:var(--muted); }
+  .item .status { font-size:13px; font-weight:600; color:var(--wear); margin-top:8px; }
+  .item.ok .status { color:var(--good); }
+  .rate { display:flex; gap:6px; margin-top:10px; }
+  .rate button { flex:1; padding:12px 4px; border-radius:8px; border:1px solid var(--line); background:#fff; font-size:15px; color:var(--ink); }
+  .rate button.on.Good { background:var(--good); border-color:var(--good); color:#fff; }
+  .rate button.on.Wear { background:var(--wear); border-color:var(--wear); color:#fff; }
+  .rate button.on.Damage { background:var(--dmg); border-color:var(--dmg); color:#fff; }
+  .note { margin-top:10px; }
+  .photos { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; align-items:center; }
+  .thumb { width:84px; height:84px; border-radius:6px; border:1px solid var(--line); object-fit:cover; background:#e3e7ec;
+           font-size:11px; display:flex; align-items:center; justify-content:center; text-align:center; color:var(--muted); padding:3px; }
+  .pbtn { padding:12px 14px; border-radius:8px; border:1px dashed var(--blue); background:#f3f7fb; color:var(--blue); font-size:15px; }
+  .link { display:block; width:100%; text-align:left; background:none; border:0; border-bottom:1px solid var(--line); padding:11px 0; font-size:15px; color:var(--ink); }
+  .link:last-child { border-bottom:0; }
+  .sig { width:100%; height:170px; border:1px solid var(--line); border-radius:8px; background:#fff; touch-action:none; display:block; }
+  .small-btn { background:none; border:0; color:var(--blue); font-size:14px; padding:8px 0; }
+  .check { display:flex; gap:10px; align-items:center; margin-top:14px; font-size:15px; color:var(--ink); }
+  .check input { width:22px; height:22px; }
+  .counts { display:flex; gap:8px; text-align:center; margin-top:8px; }
+  .counts div { flex:1; background:#f5f7f9; border-radius:8px; padding:8px 4px; font-size:13px; color:var(--muted); }
+  .counts b { display:block; font-size:20px; color:var(--ink); }
+  .overlay { position:fixed; inset:0; background:rgba(15,20,26,.94); z-index:20; display:flex; flex-direction:column; align-items:center;
+             justify-content:center; color:#fff; padding:16px; text-align:center; }
+  .overlay video { width:100%; max-width:560px; max-height:68vh; background:#000; border-radius:8px; }
+  .overlay .row2 { width:100%; max-width:560px; }
+  .overlay .small-btn { color:#cfe0f2; margin-top:10px; }
+  .toast { position:fixed; left:12px; right:12px; bottom:84px; background:#24303c; color:#fff; padding:12px 14px; border-radius:9px; z-index:30; font-size:15px; }
+  .footer { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--line); padding:10px 12px; z-index:4; }
+  .footer .btn { margin:0 auto; max-width:616px; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline:3px solid #7fb0e0; outline-offset:1px; }
+</style>
+<script>
+  // Runs before the main script. If anything stops the app from starting, say so on the page.
+  window.APP_STARTED = false;
+  function showStartupProblem(msg) {
+    window.STARTUP_PROBLEM_SHOWN = true;
+    var box = document.getElementById('app');
+    if (!box) { document.addEventListener('DOMContentLoaded', function () { showStartupProblem(msg); }); return; }
+    box.innerHTML = '<div style="background:#fff;border:1px solid #d5dae0;border-radius:10px;padding:14px;margin:12px">' +
+      '<h2 style="margin:0 0 8px;font-size:18px">The form did not start</h2><p style="margin:0 0 8px"></p>' +
+      '<p style="margin:0;color:#5f6b78;font-size:14px">Page version 2026-09-15h. Send a screenshot of this message if it keeps happening.</p></div>';
+    box.querySelector('p').textContent = msg;
+  }
+  window.addEventListener('error', function (e) {
+    if (!window.APP_STARTED && !window.STARTUP_PROBLEM_SHOWN) showStartupProblem('Error: ' + e.message + (e.lineno ? ' (line ' + e.lineno + ')' : ''));
+  });
+  setTimeout(function () {
+    if (!window.APP_STARTED && !window.STARTUP_PROBLEM_SHOWN) showStartupProblem('The page did not finish starting after 45 seconds. Check signal and reload.');
+  }, 45000);
+</script>
+</head>
+<body>
+<header>
+  <button id="back" hidden>Back</button>
+  <h1 id="title">Inspection</h1>
+  <span id="sync" hidden></span>
+</header>
+<main id="app"></main>
+<div id="footer" class="footer" hidden></div>
+
+<script>
+/* Paste the Web app URL from Apps Script (Deploy > Manage deployments) between the quotes. It ends in /exec. */
+const API_URL = 'PASTE_WEB_APP_URL_HERE';
+
+const CFG = { property: '99 Oakland Hill', maxAge: 3, requireGps: true, tz: 'Africa/Johannesburg', maxPhotos: 3 };
+const RATINGS = ['Good', 'Wear', 'Damage'];
+const TYPES = ['Move-in', 'Renewal', 'Move-out'];
+
+const S = {
+  pin: store('get', 'pin') || '', view: 'pin', drafts: [], insp: null, checklist: [], results: {}, room: null,
+  queue: [], running: false, offline: false, gps: null, watching: false, noLive: false,
+  startDraft: {}, editStart: false, busy: false,
+  sig: { agent: null, tenant: null }, sign: { declined: false, reason: '', comments: '' },
+  noteTimers: {}, doneInfo: null
+};
+
+/* ---------- small helpers ---------- */
+function $(s) { return document.querySelector(s); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function store(op, k, v) {
+  try { return op === 'get' ? sessionStorage.getItem(k) : sessionStorage.setItem(k, v); } catch (e) { return null; }
+}
+function local(op, k, v) {
+  try { return op === 'get' ? localStorage.getItem(k) : localStorage.setItem(k, v); } catch (e) { return null; }
+}
+function toast(msg, ms) {
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), ms || 3500);
+}
+function overlay(html) {
+  const o = document.createElement('div'); o.className = 'overlay'; o.innerHTML = html;
+  document.body.appendChild(o); return o;
+}
+function fmtSA(d) {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: CFG.tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(d)
+    .reduce((a, x) => { a[x.type] = x.value; return a; }, {});
+  return p.year + '-' + p.month + '-' + p.day + ' ' + (p.hour === '24' ? '00' : p.hour) + ':' + p.minute + ':' + p.second;
+}
+function gpsText(g) {
+  return g ? g.lat.toFixed(6) + ', ' + g.lng.toFixed(6) + ' (+/- ' + Math.round(g.acc) + ' m)' : 'Not available';
+}
+
+/* ---------- server calls ---------- */
+function call(action, extra) {
+  const body = JSON.stringify(Object.assign({ pin: S.pin, action: action }, extra || {}));
+  const waitMs = action === 'submit' ? 400000 : 90000;
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), waitMs) : null;
+  const fail = (msg, network) => { const e = new Error(msg); if (network) e.network = true; else e.server = true; return e; };
+  // text/plain keeps this a simple request, which Apps Script accepts from another site.
+  return fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: body,
+    redirect: 'follow', signal: ctrl ? ctrl.signal : undefined })
+    .catch(() => { throw fail('No connection', true); })
+    .then(resp => {
+      if (resp.status >= 500) throw fail('The server is busy', true);
+      return resp.text();
+    })
+    .then(text => {
+      let r;
+      try { r = JSON.parse(text); }
+      catch (x) { throw fail('The script sent back an unexpected answer. Check that doPost is in Code.gs and a new version was deployed.', false); }
+      if (r && r.error) throw fail(r.error, false);
+      return r;
+    })
+    .finally(() => { if (timer) clearTimeout(timer); });
+}
+
+/* ---------- save queue (keeps working through weak signal) ---------- */
+function enqueue(task) {
+  if (task.key && S.queue.some((t, i) => i > 0 && t.key === task.key)) return;
+  S.queue.push(task); setSync(); runQueue();
+}
+async function runQueue() {
+  if (S.running) return;
+  S.running = true;
+  while (S.queue.length) {
+    const t = S.queue[0];
+    try {
+      await t.run();
+      S.queue.shift(); S.offline = false;
+    } catch (e) {
+      if (e.network) { S.offline = true; setSync(); await sleep(6000); continue; }
+      S.queue.shift();
+      toast('Not saved: ' + e.message, 7000);
+    }
+    setSync();
+  }
+  S.running = false; setSync(); refreshFooter();
+}
+function setSync() {
+  const el = $('#sync');
+  if (!S.insp) { el.hidden = true; return; }
+  el.hidden = false;
+  const n = S.queue.length;
+  if (!n) { el.textContent = 'All saved'; el.className = ''; }
+  else { el.textContent = (S.offline ? 'No signal, ' : 'Saving, ') + n + ' left'; el.className = S.offline ? 'warn' : ''; }
+}
+window.addEventListener('beforeunload', e => { if (S.queue.length) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------- rules (same as the server) ---------- */
+function res(id) { return S.results[id] || (S.results[id] = { rating: '', note: '', photos: [] }); }
+function photoOnly(it) { return Number(it.min) >= 2; }
+function needPhotos(it, r) {
+  let n = Number(it.min) || 0;
+  if (it.photo) n = Math.max(n, 1);
+  if (r && (r.rating === 'Wear' || r.rating === 'Damage')) n = Math.max(n, 1);
+  return n;
+}
+function problem(it) {
+  const r = res(it.id), have = r.photos.length;
+  if (!photoOnly(it) && !r.rating) return 'Not rated';
+  const n = needPhotos(it, r);
+  if (have < n) return (n - have) === 1 ? '1 photo needed' : (n - have) + ' photos needed';
+  if (r.rating === 'Damage' && !r.note.trim()) return 'Note needed';
+  return '';
+}
+function incomplete() { return S.checklist.filter(it => problem(it)); }
+function rooms() {
+  const m = [];
+  S.checklist.forEach(it => {
+    let g = m.find(x => x.name === it.room);
+    if (!g) { g = { name: it.room, items: [] }; m.push(g); }
+    g.items.push(it);
+  });
+  return m;
+}
+function hint(it) {
+  const r = res(it.id), h = [];
+  if (it.test) h.push('Test it works.');
+  if (photoOnly(it)) h.push('Take ' + it.min + ' wide shots from opposite corners.');
+  else if (it.photo) h.push('Photo required.');
+  if (r.rating === 'Wear' || r.rating === 'Damage') h.push('Take a close-up of the ' + r.rating.toLowerCase() + '.');
+  return h.join(' ');
+}
+
+/* ---------- rendering ---------- */
+function go(view, opts) {
+  Object.assign(S, opts || {}); S.view = view;
+  if (S.insp && ['rooms', 'room', 'review'].includes(view)) {
+    local('set', 'resume', JSON.stringify({ id: S.insp.InspectionID, room: view === 'room' ? S.room : '' }));
+  }
+  render(); window.scrollTo(0, 0);
+}
+function render() {
+  window.APP_STARTED = true;
+  const v = S.view;
+  const parent = { start: S.editStart ? 'rooms' : 'home', rooms: 'home', room: 'rooms', review: 'rooms', sign: 'review' }[v];
+  $('#back').hidden = !parent;
+  $('#back').onclick = () => goBack(parent);
+  const titles = { pin: CFG.property, home: CFG.property, start: S.editStart ? 'Start details' : 'New inspection',
+    rooms: S.insp ? S.insp.InspectionType + ' inspection' : '', room: S.room, review: 'Review', sign: 'Sign-off', done: 'Submitted' };
+  $('#title').textContent = titles[v] || CFG.property;
+  const views = { pin: viewPin, home: viewHome, start: viewStart, rooms: viewRooms, room: viewRoom, review: viewReview, sign: viewSign, done: viewDone };
+  $('#app').innerHTML = views[v]();
+  if (v === 'sign') initSign();
+  if (v === 'pin') { const p = $('#pin'); if (p) p.focus(); }
+  setSync(); refreshFooter();
+}
+async function goBack(to) {
+  if (to === 'home') {
+    if (S.queue.length) return toast('Wait until everything is saved before leaving this inspection.');
+    S.insp = null; S.checklist = []; S.results = {}; local('set', 'resume', '');
+    await loadDrafts();
+  }
+  go(to, to === 'rooms' ? { editStart: false } : {});
+}
+
+function viewPin() {
+  return `<div class="card"><h2>${esc(CFG.property)} inspection</h2>
+    <label for="pin">Access PIN</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off">
+    <div class="err" id="pinErr"></div>
+    <button class="btn" data-act="pinGo">Continue</button></div>`;
+}
+
+function viewHome() {
+  const drafts = S.drafts.length
+    ? S.drafts.map(d => `<button class="link" data-act="draft" data-id="${esc(d.id)}"><b>${esc(d.type)}</b>, ${esc(d.tenant)}<br><span class="muted">Started ${esc(d.created)}. ${esc(d.id)}</span></button>`).join('')
+    : '<div class="muted">No unfinished inspections.</div>';
+  return `<div class="card"><h2>Start</h2>
+      <div class="muted">Use for every move-in, lease renewal and move-out.</div>
+      <button class="btn" data-act="newInsp">New inspection</button></div>
+    <div class="card"><h2>Continue an unfinished inspection</h2>${drafts}</div>`;
+}
+
+function viewStart() {
+  const d = S.startDraft;
+  const f = (k, label, type, extra) => `<label for="f_${k}">${label}</label><input id="f_${k}" type="${type}" value="${esc(d[k] || '')}" ${extra || ''}>`;
+  return `<div class="card">
+    <label>Inspection type</label>
+    <div class="seg">${TYPES.map(t => `<button data-act="type" data-v="${t}" class="${d.InspectionType === t ? 'on' : ''}">${t}</button>`).join('')}</div>
+    ${f('AgentName', 'Agent name', 'text', 'autocomplete="name"')}
+    ${f('AgentEmail', 'Agent email', 'email', 'autocomplete="email"')}
+    ${f('TenantNames', 'Tenant name(s)', 'text')}
+    ${f('TenantEmail', 'Tenant email', 'email')}
+    <div class="row2"><div>${f('WaterReading', 'Water meter', 'text', 'inputmode="decimal"')}</div>
+      <div>${f('ElectricityReading', 'Electricity meter or units', 'text', 'inputmode="decimal"')}</div></div>
+    <div class="row2"><div>${f('KeysCount', 'Number of keys', 'number', 'inputmode="numeric" min="0"')}</div>
+      <div>${f('RemotesCount', 'Number of remotes', 'number', 'inputmode="numeric" min="0"')}</div></div>
+    <div class="err" id="startErr"></div>
+    <button class="btn" data-act="startGo">${S.editStart ? 'Save details' : 'Start inspection'}</button></div>`;
+}
+
+function viewRooms() {
+  const total = S.checklist.length, open = incomplete().length, done = total - open;
+  const list = rooms().map(g => {
+    const left = g.items.filter(it => problem(it)).length;
+    return `<button class="room" data-act="room" data-room="${esc(g.name)}"><span>${esc(g.name)}</span>
+      ${left ? `<span class="left">${g.items.length - left} of ${g.items.length}</span>` : '<span class="done">Done</span>'}</button>`;
+  }).join('');
+  return `<div class="card"><b>${esc(S.insp.TenantNames)}</b><div class="muted">${esc(S.insp.InspectionID)}</div>
+      <div class="muted" style="margin-top:6px">${done} of ${total} items complete</div>
+      <div class="bar"><i style="width:${total ? Math.round(done / total * 100) : 0}%"></i></div></div>
+    ${list}
+    <button class="btn sec" data-act="editStart">Edit start details</button>`;
+}
+
+function viewRoom() {
+  const g = rooms().find(r => r.name === S.room);
+  if (!g) return '<div class="card">Room not found.</div>';
+  return g.items.map(itemCard).join('');
+}
+
+function itemCard(it) {
+  const r = res(it.id), pr = problem(it), n = needPhotos(it, r), photos = r.photos;
+  let h = `<div class="item ${pr ? '' : 'ok'}" id="it-${esc(it.id)}">
+    <div class="ref">${esc(it.id)}</div><div class="name">${esc(it.item)}</div>
+    <div class="hint">${esc(hint(it))}</div>`;
+  if (!photoOnly(it)) {
+    h += `<div class="rate">${RATINGS.map(x => `<button class="${x} ${r.rating === x ? 'on' : ''}" data-act="rate" data-id="${esc(it.id)}" data-v="${x}">${x}</button>`).join('')}</div>`;
+  }
+  if (r.rating === 'Wear' || r.rating === 'Damage') {
+    h += `<textarea class="note" data-note="${esc(it.id)}" placeholder="${r.rating === 'Damage' ? 'What is damaged and where (required)' : 'Describe the wear (optional)'}">${esc(r.note)}</textarea>`;
+  }
+  if (n > 0 || photos.length || r.rating) {
+    h += '<div class="photos">' + photos.map((p, i) => p.thumb
+      ? `<img class="thumb" src="${p.thumb}" alt="Photo ${i + 1}" data-act="rmPhoto" data-id="${esc(it.id)}" data-i="${i}">`
+      : `<div class="thumb" data-act="rmPhoto" data-id="${esc(it.id)}" data-i="${i}">Photo ${i + 1} saved ${esc((p.takenAtText || '').slice(11, 16))}</div>`).join('');
+    if (photos.length < CFG.maxPhotos) {
+      const label = n > photos.length ? `Take photo (${photos.length + 1} of ${n})` : 'Add photo';
+      h += `<button class="pbtn" data-act="photo" data-id="${esc(it.id)}">${label}</button>`;
+    }
+    h += '</div>';
+  }
+  const uploading = photos.some(p => p.pending) ? ', photo uploading' : '';
+  h += `<div class="status">${pr ? esc(pr) : 'Done'}${uploading}</div></div>`;
+  return h;
+}
+function renderItem(id) {
+  const el = document.getElementById('it-' + id);
+  const it = S.checklist.find(x => x.id === id);
+  if (el && it && S.view === 'room') el.outerHTML = itemCard(it);
+  setSync();
+}
+function updateStatus(id) {
+  const el = document.getElementById('it-' + id);
+  const it = S.checklist.find(x => x.id === id);
+  if (!el || !it) return;
+  const pr = problem(it);
+  el.classList.toggle('ok', !pr);
+  el.querySelector('.status').textContent = pr || 'Done';
+}
+
+function viewReview() {
+  const open = incomplete();
+  const c = { Good: 0, Wear: 0, Damage: 0 }; let photos = 0;
+  S.checklist.forEach(it => { const r = res(it.id); if (c[r.rating] !== undefined) c[r.rating]++; photos += r.photos.length; });
+  let h = `<div class="card"><h2>${S.checklist.length - open.length} of ${S.checklist.length} items complete</h2>
+    <div class="counts"><div><b>${c.Good}</b>Good</div><div><b>${c.Wear}</b>Wear</div><div><b>${c.Damage}</b>Damage</div><div><b>${photos}</b>Photos</div></div>
+    ${S.queue.length ? `<p class="muted">${S.queue.length} change(s) still saving.</p>` : ''}</div>`;
+  if (open.length) {
+    h += '<div class="card"><h2>Still to complete</h2>' + open.map(it =>
+      `<button class="link" data-act="jump" data-id="${esc(it.id)}" data-room="${esc(it.room)}">${esc(it.room)}: ${esc(it.item)}<br><span class="muted">${esc(problem(it))}</span></button>`).join('') + '</div>';
+  }
+  const flagged = S.checklist.filter(it => ['Wear', 'Damage'].includes(res(it.id).rating));
+  if (flagged.length) {
+    h += '<div class="card"><h2>Wear and damage</h2>' + flagged.map(it => {
+      const r = res(it.id);
+      return `<button class="link" data-act="jump" data-id="${esc(it.id)}" data-room="${esc(it.room)}"><b>${r.rating}</b>: ${esc(it.room)}, ${esc(it.item)}<br><span class="muted">${esc(r.note || 'No note')}</span></button>`;
+    }).join('') + '</div>';
+  }
+  return h;
+}
+
+function viewSign() {
+  return `<div class="card"><h2>Tenant comments</h2>
+      <textarea id="sComments" placeholder="Anything the tenant wants recorded (optional)">${esc(S.sign.comments)}</textarea></div>
+    <div class="card"><h2>Agent signature</h2><div class="muted">${esc(S.insp.AgentName)}</div>
+      <canvas class="sig" id="sigAgent"></canvas><button class="small-btn" data-act="clearSig" data-v="agent">Clear</button></div>
+    <div class="card"><h2>Tenant signature</h2><div class="muted">${esc(S.insp.TenantNames)}</div>
+      <div id="tenantPad" ${S.sign.declined ? 'hidden' : ''}><canvas class="sig" id="sigTenant"></canvas>
+        <button class="small-btn" data-act="clearSig" data-v="tenant">Clear</button></div>
+      <label class="check"><input type="checkbox" id="sDeclined" ${S.sign.declined ? 'checked' : ''}> Tenant did not sign</label>
+      <div id="reasonBox" ${S.sign.declined ? '' : 'hidden'}><label for="sReason">Reason</label>
+        <input id="sReason" type="text" value="${esc(S.sign.reason)}" placeholder="For example: not present, refused to sign"></div></div>`;
+}
+
+function viewDone() {
+  const r = S.doneInfo || {};
+  const msg = r.reportOk
+    ? 'The report has been emailed to you and the owner.'
+    : 'The inspection is saved and locked. The report is delayed, and the owner has been told.';
+  return `<div class="card"><h2>Inspection submitted</h2><p>${msg}</p>
+    <p class="muted">It can no longer be changed.</p>
+    <button class="btn" data-act="home">Back to start</button></div>`;
+}
+
+function refreshFooter() {
+  const f = $('#footer'); let h = '';
+  if (S.view === 'rooms') h = '<button class="btn" data-act="review">Review and sign-off</button>';
+  else if (S.view === 'room') {
+    const rs = rooms(), i = rs.findIndex(r => r.name === S.room);
+    h = i >= 0 && i < rs.length - 1
+      ? `<button class="btn" data-act="room" data-room="${esc(rs[i + 1].name)}">Next: ${esc(rs[i + 1].name)}</button>`
+      : '<button class="btn" data-act="review">Review</button>';
+  } else if (S.view === 'review') {
+    const n = incomplete().length;
+    h = `<button class="btn" data-act="sign" ${n ? 'disabled' : ''}>${n ? n + ' item' + (n > 1 ? 's' : '') + ' still to complete' : 'Continue to sign-off'}</button>`;
+  } else if (S.view === 'sign') {
+    const m = signMissing();
+    h = `<button class="btn" data-act="submit" ${m ? 'disabled' : ''}>${m ? esc(m) : 'Submit inspection'}</button>`;
+  }
+  f.hidden = !h; f.innerHTML = h;
+}
+function signMissing() {
+  const n = incomplete().length;
+  if (n) return n + ' item(s) still to complete';
+  if (S.queue.length) return 'Waiting for saves to finish';
+  if (!S.sig.agent) return 'Agent signature needed';
+  if (S.sign.declined) return S.sign.reason.trim() ? '' : 'Reason needed';
+  return S.sig.tenant ? '' : 'Tenant signature needed';
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const id = b.dataset.id;
+  switch (b.dataset.act) {
+    case 'pinGo': return pinGo();
+    case 'newInsp': return newInspection();
+    case 'draft': return openDraft(id);
+    case 'type': collectStart(); S.startDraft.InspectionType = b.dataset.v; return render();
+    case 'startGo': return startGo();
+    case 'editStart': S.startDraft = Object.assign({}, S.insp); return go('start', { editStart: true });
+    case 'room': return go('room', { room: b.dataset.room });
+    case 'rate': return setRating(id, b.dataset.v);
+    case 'photo': return takePhoto(id);
+    case 'rmPhoto': return removePhoto(id, Number(b.dataset.i));
+    case 'review': return go('review');
+    case 'jump':
+      go('room', { room: b.dataset.room });
+      return setTimeout(() => { const el = document.getElementById('it-' + id); if (el) el.scrollIntoView({ block: 'center' }); }, 60);
+    case 'sign': return go('sign');
+    case 'clearSig': S.sig[b.dataset.v] = null; initPad(b.dataset.v); return refreshFooter();
+    case 'submit': return submitInspection();
+    case 'home': return goBack('home');
+  }
+});
+document.addEventListener('input', e => {
+  const id = e.target.dataset && e.target.dataset.note;
+  if (!id) return;
+  res(id).note = e.target.value;
+  updateStatus(id);
+  clearTimeout(S.noteTimers[id]);
+  S.noteTimers[id] = setTimeout(() => queueSaveItem(id), 1200);
+});
+document.addEventListener('change', e => {
+  const id = e.target.dataset && e.target.dataset.note;
+  if (!id) return;
+  clearTimeout(S.noteTimers[id]);
+  queueSaveItem(id);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'pin') pinGo(); });
+
+/* ---------- PIN, home, start ---------- */
+async function pinGo() {
+  S.pin = ($('#pin').value || '').trim();
+  if (!S.pin) return;
+  try { await loadDrafts(); store('set', 'pin', S.pin); watchGps(); await resumeOrHome(); }
+  catch (e) { $('#pinErr').textContent = e.network ? 'No connection. Check signal and try again.' : e.message; }
+}
+async function loadDrafts() {
+  const r = await call('listDrafts');
+  S.drafts = r.drafts || [];
+}
+function newInspection() {
+  S.startDraft = { AgentName: local('get', 'agentName') || '', AgentEmail: local('get', 'agentEmail') || '' };
+  go('start', { editStart: false });
+}
+/** If the phone reloaded the page mid-inspection, go straight back to where the agent was. */
+async function resumeOrHome() {
+  let rs = null;
+  try { rs = JSON.parse(local('get', 'resume') || 'null'); } catch (e) { }
+  if (rs && rs.id && S.drafts.some(d => d.id === rs.id)) {
+    try {
+      applyLoad(await call('load', { id: rs.id }));
+      const hasRoom = rs.room && S.checklist.some(it => it.room === rs.room);
+      go(hasRoom ? 'room' : 'rooms', hasRoom ? { room: rs.room } : {});
+      return toast('Back in your inspection. Check the last item you were on.', 5000);
+    } catch (e) { }
+  }
+  local('set', 'resume', '');
+  go('home');
+}
+async function openDraft(id) {
+  if (S.busy) return;
+  S.busy = true; toast('Opening inspection');
+  try { applyLoad(await call('load', { id: id })); go('rooms'); watchGps(); }
+  catch (e) { alert(e.network ? 'No connection. Check signal and try again.' : e.message); }
+  S.busy = false;
+}
+function applyLoad(r) {
+  S.insp = r.inspection; S.checklist = r.checklist; S.results = {};
+  Object.keys(r.results || {}).forEach(k => {
+    const x = r.results[k];
+    S.results[k] = { rating: x.rating || '', note: x.note || '', photos: (x.photos || []).map(p => Object.assign({}, p, { pending: false })) };
+  });
+  S.sig = { agent: null, tenant: null };
+  S.sign = { declined: false, reason: '', comments: S.insp.TenantComments || '' };
+}
+function collectStart() {
+  ['AgentName', 'AgentEmail', 'TenantNames', 'TenantEmail', 'WaterReading', 'ElectricityReading', 'KeysCount', 'RemotesCount']
+    .forEach(k => { const el = $('#f_' + k); if (el) S.startDraft[k] = el.value.trim(); });
+}
+async function startGo() {
+  if (S.busy) return;
+  collectStart();
+  const d = S.startDraft, err = $('#startErr');
+  const labels = { InspectionType: 'Inspection type', AgentName: 'Agent name', AgentEmail: 'Agent email', TenantNames: 'Tenant name',
+    TenantEmail: 'Tenant email', WaterReading: 'Water meter', ElectricityReading: 'Electricity', KeysCount: 'Number of keys', RemotesCount: 'Number of remotes' };
+  const missing = Object.keys(labels).filter(k => !String(d[k] || '').trim());
+  if (missing.length) { err.textContent = labels[missing[0]] + ' is required.'; return; }
+  S.busy = true; err.textContent = '';
+  const btn = document.querySelector('[data-act=startGo]'); btn.disabled = true; btn.textContent = 'Saving';
+  try {
+    if (S.editStart) {
+      const r = await call('saveHeader', { id: S.insp.InspectionID, data: d });
+      S.insp = r.inspection; S.busy = false;
+      return go('rooms', { editStart: false });
+    }
+    let gps = null;
+    try { gps = await getGps(); }
+    catch (e) {
+      if (CFG.requireGps) throw new Error('Location is needed. Allow location for this page and turn on GPS, then try again.');
+    }
+    local('set', 'agentName', d.AgentName); local('set', 'agentEmail', d.AgentEmail);
+    applyLoad(await call('start', { data: Object.assign({}, d, { gps: gps }) }));
+    S.busy = false;
+    go('rooms');
+  } catch (e) {
+    S.busy = false; btn.disabled = false; btn.textContent = S.editStart ? 'Save details' : 'Start inspection';
+    err.textContent = e.network ? 'No connection. Check signal and try again.' : e.message;
+  }
+}
+
+/* ---------- ratings and saving ---------- */
+function setRating(id, v) {
+  const r = res(id);
+  r.rating = v;
+  if (v === 'Good') r.note = '';
+  renderItem(id); queueSaveItem(id);
+}
+function queueSaveItem(id) {
+  const inspId = S.insp.InspectionID;
+  enqueue({
+    key: 'item:' + id,
+    run: () => {
+      const r = res(id);
+      const photos = r.photos.filter(p => p.fileId).map(p => {
+        const c = Object.assign({}, p); delete c.thumb; delete c.pending; delete c.local; return c;
+      });
+      return call('saveItem', { id: inspId, data: { itemId: id, rating: r.rating, note: r.note, photos: photos } });
+    }
+  });
+}
+function removePhoto(id, i) {
+  if (!confirm("Remove this photo from the item? The original stays in the owner's Drive.")) return;
+  res(id).photos.splice(i, 1);
+  renderItem(id); queueSaveItem(id);
+}
+
+/* ---------- location ---------- */
+function watchGps() {
+  if (S.watching || !navigator.geolocation) return;
+  S.watching = true;
+  navigator.geolocation.watchPosition(p => {
+    S.gps = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, at: Date.now() };
+  }, () => { }, { enableHighAccuracy: true, maximumAge: 15000 });
+}
+function getGps() {
+  if (S.gps && Date.now() - S.gps.at < 60000) return Promise.resolve(S.gps);
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('This browser does not give a location.'));
+    navigator.geolocation.getCurrentPosition(p => {
+      S.gps = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, at: Date.now() };
+      resolve(S.gps);
+    }, e => reject(new Error(e.message || 'Location not available')), { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 });
+  });
+}
+
+/* ---------- camera ---------- */
+async function takePhoto(id) {
+  const it = S.checklist.find(x => x.id === id), r = res(id);
+  if (r.photos.length >= CFG.maxPhotos) return toast('Maximum ' + CFG.maxPhotos + ' photos per item.');
+  if (S.queue.filter(t => t.photo).length >= 3) {
+    return toast('Photos are still uploading. Wait until the header says All saved, then take the next photo.', 6000);
+  }
+  let shot;
+  try { shot = await capture(); }
+  catch (e) { if (e.message !== 'cancel') alert(e.message); return; }
+
+  let gps = null;
+  try { gps = await getGps(); }
+  catch (e) {
+    if (CFG.requireGps) { alert('Location is needed to stamp the photo. Allow location for this page and turn on GPS, then take the photo again.'); return; }
+  }
+
+  const base = shot.canvas;
+  stampOn(base, it, shot.takenAt, gps);
+  let full = base.toDataURL('image/jpeg', 0.82).split(',')[1];
+  const smallCanvas = scaleCanvas(base, base.width, base.height, 900);
+  freeCanvas(base);
+  let small = smallCanvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+  const thumbCanvas = scaleCanvas(smallCanvas, smallCanvas.width, smallCanvas.height, 160);
+  freeCanvas(smallCanvas);
+  const thumb = thumbCanvas.toDataURL('image/jpeg', 0.6);
+  freeCanvas(thumbCanvas);
+  shot.canvas = null;
+
+  const p = { thumb: thumb, pending: true, takenAt: shot.takenAt.toISOString(), takenAtText: fmtSA(shot.takenAt),
+    lat: gps ? gps.lat : null, lng: gps ? gps.lng : null, acc: gps ? gps.acc : null, gpsText: gpsText(gps), source: shot.source };
+  r.photos.push(p);
+  renderItem(id);
+
+  const inspId = S.insp.InspectionID;
+  enqueue({
+    photo: true,
+    run: async () => {
+      const up = await call('uploadPhoto', { id: inspId, data: { itemId: id, full: full, small: small, takenAt: p.takenAt } });
+      full = null; small = null;
+      Object.assign(p, up, { pending: false });
+      renderItem(id);
+      queueSaveItem(id);
+    }
+  });
+}
+
+function capture() {
+  if (!S.noLive && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    return liveCapture().catch(e => {
+      if (e.message === 'cancel') throw e;
+      S.noLive = true;
+      return fileCaptureViaButton();
+    });
+  }
+  return fileCapture();
+}
+
+/** Preferred: live camera inside the page. There is no way to pick a gallery photo here. */
+function liveCapture() {
+  return new Promise((resolve, reject) => {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1600 }, height: { ideal: 1200 } }, audio: false })
+      .then(stream => {
+        const ov = overlay(`<video autoplay playsinline muted></video>
+          <div class="row2" style="margin-top:12px"><div><button class="btn sec" data-x="cancel">Cancel</button></div>
+          <div><button class="btn" data-x="snap">Take photo</button></div></div>
+          <button class="small-btn" data-x="fallback">Camera not showing? Use the phone camera</button>`);
+        const v = ov.querySelector('video');
+        v.srcObject = stream;
+        const playing = v.play(); if (playing && playing.catch) playing.catch(() => { });
+        const stop = () => { stream.getTracks().forEach(t => t.stop()); v.pause(); v.srcObject = null; ov.remove(); };
+        ov.querySelector('[data-x=cancel]').onclick = () => { stop(); reject(new Error('cancel')); };
+        ov.querySelector('[data-x=fallback]').onclick = () => { stop(); reject(new Error('fallback')); };
+        ov.querySelector('[data-x=snap]').onclick = () => {
+          if (!v.videoWidth) return;
+          const c = scaleCanvas(v, v.videoWidth, v.videoHeight, 1600);
+          const t = new Date();
+          stop();
+          resolve({ canvas: c, takenAt: t, source: 'In-app camera' });
+        };
+      })
+      .catch(reject);
+  });
+}
+
+function fileCaptureViaButton() {
+  return new Promise((resolve, reject) => {
+    const ov = overlay(`<p>Tap below to open the phone camera. Take the photo straight away. Photos older than ${CFG.maxAge} minutes are rejected.</p>
+      <div class="row2"><div><button class="btn sec" data-x="cancel">Cancel</button></div>
+      <div><button class="btn" data-x="open">Open camera</button></div></div>`);
+    ov.querySelector('[data-x=cancel]').onclick = () => { ov.remove(); reject(new Error('cancel')); };
+    ov.querySelector('[data-x=open]').onclick = () => { ov.remove(); fileCapture().then(resolve, reject); };
+  });
+}
+
+/** Fallback: the phone's camera app. Old photos are rejected using the time inside the photo. */
+function fileCapture() {
+  return new Promise((resolve, reject) => {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*'; inp.setAttribute('capture', 'environment'); inp.style.display = 'none';
+    document.body.appendChild(inp);
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0];
+      inp.remove();
+      if (!f) return reject(new Error('cancel'));
+      try {
+        const head = await readHead(f, 262144);
+        const exif = readExifDate(head);
+        const takenAt = exif || new Date(f.lastModified || Date.now());
+        const ageMin = (Date.now() - takenAt.getTime()) / 60000;
+        if (ageMin > CFG.maxAge || ageMin < -5) {
+          return reject(new Error('This photo was taken at ' + fmtSA(takenAt) + ', not in the last ' + CFG.maxAge + ' minutes. Take a new photo now.'));
+        }
+        const img = await loadImage(f);
+        const c = scaleCanvas(img, img.naturalWidth, img.naturalHeight, 1600);
+        URL.revokeObjectURL(img.src); img.src = '';
+        resolve({ canvas: c, takenAt: takenAt, source: exif ? 'Phone camera (photo time)' : 'Phone camera (file time)' });
+      } catch (e) {
+        reject(new Error('Could not read the photo. Try again.'));
+      }
+    };
+    inp.click();
+  });
+}
+
+function readHead(file, n) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = () => reject(fr.error);
+    fr.readAsArrayBuffer(file.slice(0, n));
+  });
+}
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('decode'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+/** Reads DateTimeOriginal from a JPEG. Returns a Date or null. */
+function readExifDate(buf) {
+  try {
+    const v = new DataView(buf);
+    if (v.getUint16(0) !== 0xFFD8) return null;
+    let off = 2;
+    while (off + 10 < v.byteLength) {
+      const marker = v.getUint16(off), len = v.getUint16(off + 2);
+      if ((marker & 0xFF00) !== 0xFF00) return null;
+      if (marker === 0xFFE1 && v.getUint32(off + 4) === 0x45786966) {
+        const t = off + 10, le = v.getUint16(t) === 0x4949;
+        const u16 = o => v.getUint16(o, le), u32 = o => v.getUint32(o, le);
+        const ifd = o => {
+          const tags = {}, n = u16(o);
+          for (let i = 0; i < n; i++) { const e = o + 2 + i * 12; tags[u16(e)] = { count: u32(e + 4), at: e + 8 }; }
+          return tags;
+        };
+        const str = tag => {
+          const start = tag.count > 4 ? t + u32(tag.at) : tag.at;
+          let s = '';
+          for (let i = 0; i < tag.count - 1 && start + i < v.byteLength; i++) s += String.fromCharCode(v.getUint8(start + i));
+          return s;
+        };
+        const ifd0 = ifd(t + u32(t + 4));
+        let dt = '';
+        if (ifd0[0x8769]) { const ex = ifd(t + u32(ifd0[0x8769].at)); if (ex[0x9003]) dt = str(ex[0x9003]); }
+        if (!dt && ifd0[0x0132]) dt = str(ifd0[0x0132]);
+        const m = dt.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+        return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
+      }
+      off += 2 + len;
+    }
+  } catch (e) { }
+  return null;
+}
+
+/** Phones (iPhones especially) hold canvas memory until the size is set to zero. */
+function freeCanvas(c) {
+  if (c && c.getContext) { c.width = 0; c.height = 0; }
+}
+
+function scaleCanvas(src, w, h, max) {
+  const k = Math.min(1, max / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * k); c.height = Math.round(h * k);
+  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+
+/** Burns the item reference, date, time and GPS onto the photo. */
+function stampOn(c, it, when, gps) {
+  const ctx = c.getContext('2d'), W = c.width, H = c.height;
+  const fs = Math.max(14, Math.round(Math.min(W, H) * 0.034)), pad = Math.round(fs * 0.55), lh = fs * 1.3;
+  const lines = [
+    it.id + ' | ' + it.item,
+    CFG.property + ' | ' + fmtSA(when) + ' SAST',
+    gps ? 'GPS ' + gps.lat.toFixed(6) + ', ' + gps.lng.toFixed(6) + ' (+/- ' + Math.round(gps.acc) + ' m)' : 'GPS not available'
+  ];
+  const bh = lines.length * lh + pad * 2;
+  ctx.fillStyle = 'rgba(0,0,0,0.62)';
+  ctx.fillRect(0, H - bh, W, bh);
+  ctx.fillStyle = '#fff';
+  ctx.font = '600 ' + fs + 'px Arial, sans-serif';
+  ctx.textBaseline = 'top';
+  lines.forEach((line, i) => {
+    let s = line;
+    if (ctx.measureText(s).width > W - pad * 2) {
+      while (s.length > 4 && ctx.measureText(s + '...').width > W - pad * 2) s = s.slice(0, -1);
+      s += '...';
+    }
+    ctx.fillText(s, pad, H - bh + pad + i * lh);
+  });
+}
+
+/* ---------- sign-off ---------- */
+function initSign() {
+  initPad('agent');
+  if (!S.sign.declined) initPad('tenant');
+  $('#sComments').addEventListener('change', e => {
+    S.sign.comments = e.target.value;
+    const inspId = S.insp.InspectionID, text = e.target.value;
+    enqueue({ key: 'comments', run: () => call('saveHeader', { id: inspId, data: { TenantComments: text } }) });
+  });
+  $('#sComments').addEventListener('input', e => { S.sign.comments = e.target.value; });
+  $('#sDeclined').addEventListener('change', e => {
+    S.sign.declined = e.target.checked;
+    $('#tenantPad').hidden = S.sign.declined;
+    $('#reasonBox').hidden = !S.sign.declined;
+    if (!S.sign.declined) initPad('tenant');
+    refreshFooter();
+  });
+  $('#sReason').addEventListener('input', e => { S.sign.reason = e.target.value; refreshFooter(); });
+}
+
+function initPad(key) {
+  const canvas = document.getElementById(key === 'agent' ? 'sigAgent' : 'sigTenant');
+  if (!canvas) return;
+  const box = canvas.getBoundingClientRect();
+  if (!box.width) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(box.width * dpr); canvas.height = Math.round(box.height * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, box.width, box.height);
+  ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111';
+  if (S.sig[key]) {
+    const im = new Image();
+    im.onload = () => ctx.drawImage(im, 0, 0, box.width, box.height);
+    im.src = S.sig[key];
+  }
+  let drawing = false, last = null;
+  const pt = e => { const b = canvas.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
+  canvas.onpointerdown = e => {
+    drawing = true; last = pt(e);
+    try { canvas.setPointerCapture(e.pointerId); } catch (x) { }
+    ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(last.x + 0.1, last.y + 0.1); ctx.stroke();
+  };
+  canvas.onpointermove = e => {
+    if (!drawing) return;
+    const p = pt(e);
+    ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+    last = p;
+  };
+  const end = () => { if (!drawing) return; drawing = false; S.sig[key] = canvas.toDataURL('image/png'); refreshFooter(); };
+  canvas.onpointerup = end; canvas.onpointercancel = end; canvas.onpointerleave = end;
+}
+
+async function submitInspection() {
+  const miss = signMissing();
+  if (miss) return toast(miss);
+  if (!confirm('Submit now? Once submitted, this inspection is locked and cannot be changed.')) return;
+  const ov = overlay('<h2>Submitting</h2><p>Building the report with all photos. This can take a minute or two. Keep this page open.</p>');
+  try {
+    const r = await call('submit', { id: S.insp.InspectionID, data: {
+      tenantComments: S.sign.comments, agentSig: S.sig.agent, tenantSig: S.sign.declined ? '' : S.sig.tenant,
+      tenantDeclined: S.sign.declined, declineReason: S.sign.reason } });
+    ov.remove();
+    S.insp.Status = 'Submitted';
+    local('set', 'resume', '');
+    go('done', { doneInfo: r });
+  } catch (e) {
+    ov.remove();
+    alert(e.network ? 'Could not reach the server. Nothing is lost. Check signal and tap Submit again.' : 'Not submitted: ' + e.message);
+  }
+}
+
+window.addEventListener('error', e => toast('Something went wrong: ' + e.message, 6000));
+
+/* ---------- start ---------- */
+(async function init() {
+  const PAGE_VERSION = '2026-09-15h';
+  if (API_URL.indexOf('https://script.google.com/') !== 0 || !/\/exec$/.test(API_URL)) {
+    return showStartupProblem('The Web app URL is not set in index.html. In GitHub, edit index.html and paste the URL ending in /exec into API_URL (around line 107), then commit. The change can take a few minutes to show.');
+  }
+  let cfg;
+  try { cfg = await call('config'); }
+  catch (e) {
+    return showStartupProblem(e.network
+      ? 'Could not reach the script. Check signal, then reload. If this keeps happening, check the Web app URL in index.html and that the deployment has access set to Anyone.'
+      : 'Could not load settings from the script. ' + e.message);
+  }
+  if (!cfg || cfg.version !== PAGE_VERSION) {
+    return showStartupProblem('Code.gs and index.html are from different versions (script: ' +
+      ((cfg && cfg.version) || 'old') + ', page: ' + PAGE_VERSION + '). Update both: deploy a new version in Apps Script and commit index.html in GitHub. GitHub can take up to 10 minutes to show a change, so wait, then close this tab and open the link again.');
+  }
+  Object.assign(CFG, cfg);
+  if (S.pin) {
+    try { await loadDrafts(); watchGps(); return resumeOrHome(); } catch (e) { S.pin = ''; }
+  }
+  go('pin');
+})();
+</script>
+</body>
+</html>
