@@ -14,8 +14,8 @@
   header { position:sticky; top:0; z-index:5; background:#24303c; color:#fff; padding:10px 12px; display:flex; align-items:center; gap:10px; }
   header h1 { font-size:16px; margin:0; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   header button { background:none; border:1px solid rgba(255,255,255,.45); color:#fff; border-radius:6px; padding:6px 10px; font-size:14px; }
-  #sync { font-size:12px; padding:4px 8px; border-radius:10px; background:#3b4957; white-space:nowrap; }
-  #sync.warn { background:var(--wear); }
+  header #sync { font-size:12px; padding:5px 9px; border-radius:10px; border:0; background:#3b4957; white-space:nowrap; }
+  header #sync.warn { background:var(--wear); }
   main { padding:12px; max-width:640px; margin:0 auto 96px; }
   h2 { font-size:18px; margin:0 0 8px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px; }
@@ -83,7 +83,7 @@
     if (!box) { document.addEventListener('DOMContentLoaded', function () { showStartupProblem(msg); }); return; }
     box.innerHTML = '<div style="background:#fff;border:1px solid #d5dae0;border-radius:10px;padding:14px;margin:12px">' +
       '<h2 style="margin:0 0 8px;font-size:18px">The form did not start</h2><p style="margin:0 0 8px"></p>' +
-      '<p style="margin:0;color:#5f6b78;font-size:14px">Page version 2026-09-15i. Send a screenshot of this message if it keeps happening.</p></div>';
+      '<p style="margin:0;color:#5f6b78;font-size:14px">Page version 2026-09-16a. Send a screenshot of this message if it keeps happening.</p></div>';
     box.querySelector('p').textContent = msg;
   }
   window.addEventListener('error', function (e) {
@@ -98,7 +98,7 @@
 <header>
   <button id="back" hidden>Back</button>
   <h1 id="title">Inspection</h1>
-  <span id="sync" hidden></span>
+  <button id="sync" data-act="sync" hidden></button>
 </header>
 <main id="app"></main>
 <div id="footer" class="footer" hidden></div>
@@ -106,14 +106,17 @@
 <script>
 /* The Web app URL lives in config.js next to this file, so index.html can be replaced without re-pasting it. */
 const API_URL = String(window.INSPECTION_API_URL || '').trim();
+const PAGE_VERSION = '2026-09-16a';
 
 const CFG = { property: '99 Oakland Hill', maxAge: 3, requireGps: true, tz: 'Africa/Johannesburg', maxPhotos: 3 };
 const RATINGS = ['Good', 'Wear', 'Damage'];
 const TYPES = ['Move-in', 'Renewal', 'Move-out'];
+const UPLOAD_LANES = 2;                                        // photos sent at the same time
+const FILE_FIELDS = ['fileId', 'url', 'smallId', 'name', 'receivedAt'];
 
 const S = {
   pin: store('get', 'pin') || '', view: 'pin', drafts: [], insp: null, checklist: [], results: {}, room: null,
-  queue: [], running: false, offline: false, gps: null, watching: false, noLive: false,
+  gps: null, watching: false, noLive: false, offlineMode: false, busyPhoto: false,
   startDraft: {}, editStart: false, busy: false,
   sig: { agent: null, tenant: null }, sign: { declined: false, reason: '', comments: '' },
   noteTimers: {}, doneInfo: null
@@ -147,6 +150,33 @@ function gpsText(g) {
   return g ? g.lat.toFixed(6) + ', ' + g.lng.toFixed(6) + ' (+/- ' + Math.round(g.acc) + ' m)' : 'Not available';
 }
 
+function bufToB64(buf) {
+  const u = new Uint8Array(buf), step = 0x8000;
+  let s = '';
+  for (let i = 0; i < u.length; i += step) s += String.fromCharCode.apply(null, u.subarray(i, i + step));
+  return btoa(s);
+}
+async function sha256Hex(buf) {
+  try {
+    const d = await crypto.subtle.digest('SHA-256', buf);
+    return Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) { return ''; }
+}
+function canvasBuf(c, quality) {
+  return new Promise((resolve, reject) => {
+    c.toBlob(b => {
+      if (!b) return reject(new Error('Could not make the photo file.'));
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = () => reject(fr.error);
+      fr.readAsArrayBuffer(b);
+    }, 'image/jpeg', quality);
+  });
+}
+/** 20260916-101523 in SAST, for file names. */
+function fileStamp(d) { return fmtSA(d).replace(/[-:]/g, '').replace(' ', '-'); }
+function pinHash(pin) { return sha256Hex(new TextEncoder().encode('oakland-hill|' + pin)); }
+
 /* ---------- server calls ---------- */
 function newKey() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
 
@@ -154,6 +184,7 @@ function newKey() { return Date.now().toString(36) + Math.random().toString(36).
 function errText(e) {
   if (e && e.glitch) return 'Google did not send an answer back. Your last change may have saved. Wait a moment and try again.';
   if (e && e.network) return 'No connection. Check signal and try again.';
+  if (e && e.busy) return (e.message || 'Busy') + ' Try again in a moment.';
   return (e && e.message) || 'Something went wrong.';
 }
 
@@ -172,13 +203,13 @@ async function call(action, extra) {
       if (!e.glitch) throw e;
     }
   }
-  last.network = true;   // the save queue keeps retrying these
+  last.network = true;   // the sync keeps retrying these
   throw last;
 }
 
 function callOnce(action, extra) {
   const body = JSON.stringify(Object.assign({ pin: S.pin, action: action }, extra || {}));
-  const waitMs = action === 'submit' ? 400000 : 90000;
+  const waitMs = { submit: 400000, uploadPhoto: 120000, config: 25000, listDrafts: 25000 }[action] || 60000;
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = ctrl ? setTimeout(() => ctrl.abort(), waitMs) : null;
   const fail = (msg, kind) => { const e = new Error(msg); e[kind || 'server'] = true; return e; };
@@ -201,46 +232,399 @@ function callOnce(action, extra) {
         throw fail('The script sent back an unexpected answer. Details: status ' + ans.status + ' from ' + host +
           ', answer: ' + (start ? '"' + start + '"' : 'empty'), 'glitch');
       }
-      if (r && r.error) throw fail(r.error, 'server');
+      if (r && r.error) throw fail(r.error, r.retry ? 'busy' : 'server');
       return r;
     })
     .finally(() => { if (timer) clearTimeout(timer); });
 }
 
-/* ---------- save queue (keeps working through weak signal) ---------- */
-function enqueue(task) {
-  if (task.key && S.queue.some((t, i) => i > 0 && t.key === task.key)) return;
-  S.queue.push(task); setSync(); runQueue();
-}
-async function runQueue() {
-  if (S.running) return;
-  S.running = true;
-  while (S.queue.length) {
-    const t = S.queue[0];
-    try {
-      await t.run();
-      S.queue.shift(); S.offline = false;
-    } catch (e) {
-      if (e.network) { S.offline = true; setSync(); await sleep(6000); continue; }
-      S.queue.shift();
-      toast('Not saved: ' + e.message, 7000);
-    }
-    setSync();
+/* ---------- storage on the phone ----------
+ * Everything the agent does is written to the phone first (IndexedDB), then sent in the background.
+ * insp:   one record per inspection (details, checklist, comments, signatures)
+ * items:  one record per checklist item (rating, note, photo list)
+ * photos: one small record per photo (details, sent or not)
+ * blobs:  the photo files themselves (full size and report size)
+ */
+const DB_NAME = 'oakland-hill-inspection';
+let dbPromise = null;
+function db() {
+  if (!dbPromise) {
+    dbPromise = new Promise((resolve, reject) => {
+      if (!window.indexedDB) return reject(new Error('This browser cannot store photos on the phone.'));
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const d = req.result;
+        d.createObjectStore('insp', { keyPath: 'id' });
+        d.createObjectStore('items', { keyPath: 'k' }).createIndex('insp', 'insp');
+        d.createObjectStore('photos', { keyPath: 'key' }).createIndex('insp', 'insp');
+        d.createObjectStore('blobs', { keyPath: 'key' });
+      };
+      req.onsuccess = () => { const d = req.result; d.onclose = () => { dbPromise = null; }; d.onversionchange = () => { d.close(); dbPromise = null; }; resolve(d); };
+      req.onerror = () => reject(req.error || new Error('Phone storage is not available.'));
+      req.onblocked = () => reject(new Error('Close any other tab with this form open, then reload.'));
+    });
+    dbPromise.catch(() => { dbPromise = null; });
   }
-  S.running = false; setSync(); refreshFooter();
+  return dbPromise;
+}
+function rq(r) {
+  return new Promise((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+}
+/** Runs fn inside one transaction. Resolves with fn's result only once the data is written to the phone. */
+async function tx(names, mode, fn) {
+  for (let attempt = 0; ; attempt++) {
+    const d = await db();
+    let t;
+    try { t = d.transaction(names, mode); }
+    catch (e) { dbPromise = null; if (attempt < 1) continue; throw e; }
+    return await new Promise((resolve, reject) => {
+      const st = {};
+      [].concat(names).forEach(n => { st[n] = t.objectStore(n); });
+      let out;
+      t.oncomplete = () => resolve(out);
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error || new Error('Saving on the phone was cancelled.'));
+      Promise.resolve().then(() => fn(st)).then(v => { out = v; }, e => { try { t.abort(); } catch (x) { } reject(e); });
+    });
+  }
+}
+function itemKey(inspId, itemId) { return inspId + '|' + itemId; }
+function photoId(p) { return (p && (p.key || p.fileId)) || ''; }
+function localGetInsp(id) { return tx('insp', 'readonly', s => rq(s.insp.get(id))); }
+function localAllInsp() { return tx('insp', 'readonly', s => rq(s.insp.getAll())); }
+function localItems(id) { return tx('items', 'readonly', s => rq(s.items.index('insp').getAll(id))); }
+function readAllMeta() {
+  return tx(['photos', 'items', 'insp'], 'readonly', async s =>
+    [await rq(s.photos.getAll()), await rq(s.items.getAll()), await rq(s.insp.getAll())]);
+}
+function patchInsp(id, fn) {
+  return tx('insp', 'readwrite', async s => {
+    const r = await rq(s.insp.get(id));
+    if (!r) return null;
+    fn(r);
+    await rq(s.insp.put(r));
+    return r;
+  });
+}
+function storageFail(e) {
+  const quota = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
+  alert(quota
+    ? 'The phone is out of space for this form. Free up some storage on the phone, then take the photo again.'
+    : 'Could not save on this phone: ' + ((e && e.message) || e) + '. Reload the page, then check the last item.');
+}
+
+/** Saves the item as it is on screen to the phone, and the new photo with it if there is one. Then sends in the background. */
+function saveItemLocal(id, photo) {
+  const inspId = S.insp.InspectionID, r = res(id);
+  const snap = { rating: r.rating, note: r.note, photos: r.photos.map(p => Object.assign({}, p)) };
+  const names = photo ? ['items', 'photos', 'blobs'] : ['items'];
+  return tx(names, 'readwrite', async s => {
+    if (photo) {
+      const meta = Object.assign({}, photo.meta);
+      await rq(s.blobs.put({ key: meta.key, full: photo.full, small: photo.small }));
+      await rq(s.photos.put({ key: meta.key, insp: inspId, itemId: id, meta: meta, logged: false, uploaded: false, err: '', at: Date.now() }));
+    }
+    const k = itemKey(inspId, id), cur = await rq(s.items.get(k));
+    const known = {};
+    (cur ? cur.photos : []).forEach(p => { known[photoId(p)] = p; });
+    snap.photos.forEach(p => { const c = known[photoId(p)]; if (c && c.fileId && !p.fileId) FILE_FIELDS.forEach(f => { p[f] = c[f]; }); });
+    const rev = Math.max(r.rev || 0, cur ? cur.rev || 0 : 0) + 1;
+    await rq(s.items.put({ k: k, insp: inspId, itemId: id, rating: snap.rating, note: snap.note, photos: snap.photos,
+      rev: rev, saved: cur ? cur.saved || 0 : 0, err: '' }));
+    return { rev: rev, photos: snap.photos };
+  }).then(out => {
+    if (S.insp && S.insp.InspectionID === inspId) {
+      const m = res(id);
+      m.rev = out.rev;
+      m.photos.forEach(p => {
+        const c = out.photos.find(x => photoId(x) === photoId(p));
+        if (c && c.fileId && !p.fileId) FILE_FIELDS.forEach(f => { p[f] = c[f]; });
+      });
+    }
+    kickSync(); refreshCounts();
+  });
+}
+function saveCommentsLocal() {
+  const id = S.insp.InspectionID, text = S.sign.comments;
+  return patchInsp(id, i => { i.comments = text; i.commentsRev = (i.commentsRev || 0) + 1; i.err = ''; })
+    .then(() => { kickSync(); refreshCounts(); }, storageFail);
+}
+function saveSignLocal() {
+  if (!S.insp) return;
+  const sig = Object.assign({}, S.sig), sign = { declined: S.sign.declined, reason: S.sign.reason };
+  patchInsp(S.insp.InspectionID, i => { i.sig = sig; i.sign = sign; }).catch(storageFail);
+}
+
+/** Puts what the server has into phone storage, without overwriting anything on the phone that hasn't been sent yet. */
+function mergeServerCopy(r) {
+  const id = r.inspection.InspectionID;
+  return tx(['insp', 'items', 'photos'], 'readwrite', async s => {
+    const rec = (await rq(s.insp.get(id))) || { id: id, comments: '', commentsRev: 0, commentsSaved: 0, sig: {}, sign: {} };
+    rec.inspection = r.inspection;
+    rec.checklist = r.checklist;
+    if ((rec.commentsRev || 0) <= (rec.commentsSaved || 0)) rec.comments = r.inspection.TenantComments || '';
+    await rq(s.insp.put(rec));
+    const waiting = new Set((await rq(s.photos.index('insp').getAll(id))).filter(p => !p.uploaded).map(p => p.key));
+    for (const it of r.checklist) {
+      const k = itemKey(id, it.id);
+      const loc = await rq(s.items.get(k));
+      const sv = (r.results || {})[it.id];
+      if (loc && ((loc.rev || 0) > (loc.saved || 0) || loc.photos.some(p => !p.fileId && waiting.has(p.key)))) continue;
+      if (!sv && !loc) continue;
+      const thumbs = {};
+      (loc ? loc.photos : []).forEach(p => { if (p.thumb) thumbs[photoId(p)] = p.thumb; });
+      const photos = (sv ? sv.photos || [] : []).map(p => Object.assign({}, p, thumbs[photoId(p)] ? { thumb: thumbs[photoId(p)] } : {}));
+      const rev = loc ? loc.rev || 0 : 0;
+      await rq(s.items.put({ k: k, insp: id, itemId: it.id, rating: sv ? sv.rating || '' : '', note: sv ? sv.note || '' : '',
+        photos: photos, rev: rev, saved: rev, err: '' }));
+    }
+  });
+}
+/** Removes an inspection from the phone. Only called after it is submitted, or when nothing is left to send. */
+function purgeLocal(id) {
+  return tx(['insp', 'items', 'photos', 'blobs'], 'readwrite', async s => {
+    await rq(s.insp.delete(id));
+    for (const k of await rq(s.items.index('insp').getAllKeys(id))) await rq(s.items.delete(k));
+    for (const k of await rq(s.photos.index('insp').getAllKeys(id))) { await rq(s.photos.delete(k)); await rq(s.blobs.delete(k)); }
+  }).catch(() => { });
+}
+
+/* ---------- sync: sends what is on the phone to the owner's Sheet and Drive ----------
+ * Two lanes send photos. One lane sends photo records, ratings and notes, and comments.
+ * A lost connection pauses and retries. A refusal from the server is shown, and Sync now tries again.
+ */
+const SY = { lanes: 0, dataBusy: false, dataAgain: false, upAgain: false, offline: false, busyKeys: new Set(), by: {}, wakers: [] };
+
+function wake() { const w = SY.wakers; SY.wakers = []; w.forEach(f => f()); }
+function pause(ms) {
+  return new Promise(resolve => {
+    let t = null;
+    const done = () => { clearTimeout(t); resolve(); };
+    t = setTimeout(done, ms);
+    SY.wakers.push(done);
+  });
+}
+function kickSync() {
+  if (!S.pin) return;
+  if (SY.dataBusy) SY.dataAgain = true; else dataLane();
+  SY.upAgain = true;
+  while (SY.lanes < UPLOAD_LANES) { SY.lanes++; uploadLane(); }
+}
+function syncNow() {
+  tx(['photos', 'items', 'insp'], 'readwrite', async s => {
+    for (const p of await rq(s.photos.getAll())) if (p.err) { p.err = ''; await rq(s.photos.put(p)); }
+    for (const it of await rq(s.items.getAll())) if (it.err) { it.err = ''; await rq(s.items.put(it)); }
+    for (const i of await rq(s.insp.getAll())) if (i.err) { i.err = ''; await rq(s.insp.put(i)); }
+  }).catch(() => { }).then(() => {
+    SY.offline = false; wake(); kickSync(); refreshCounts();
+    toast(navigator.onLine === false ? 'No signal on this phone. It keeps trying.' : 'Syncing');
+  });
+}
+function markMany(store, keys, msg) {
+  return tx(store, 'readwrite', async s => {
+    for (const k of keys) { const r = await rq(s[store].get(k)); if (r) { r.err = String(msg).slice(0, 300); await rq(s[store].put(r)); } }
+  });
+}
+
+async function uploadLane() {
+  let fails = 0;
+  try {
+    while (true) {
+      SY.upAgain = false;
+      const list = await tx('photos', 'readonly', s => rq(s.photos.getAll()));
+      const next = list.filter(p => !p.uploaded && !p.err && !SY.busyKeys.has(p.key)).sort((a, b) => a.at - b.at)[0];
+      if (!next) { if (SY.upAgain) continue; break; }
+      SY.busyKeys.add(next.key);
+      try {
+        const file = await tx('blobs', 'readonly', s => rq(s.blobs.get(next.key)));
+        if (!file) { await markMany('photos', [next.key], 'The photo file is missing on this phone.'); continue; }
+        const m = next.meta;
+        const up = await call('uploadPhoto', { id: next.insp, key: next.key, data: {
+          itemId: next.itemId, full: bufToB64(file.full), small: bufToB64(file.small), name: m.name, hash: m.hash,
+          takenAt: m.takenAt, takenAtText: m.takenAtText, gpsText: m.gpsText, source: m.source } });
+        await photoArrived(next, up);
+        SY.offline = false; fails = 0;
+      } catch (e) {
+        if (e.network || e.busy) {
+          if (e.network) SY.offline = true;
+          refreshCounts();
+          await pause(Math.min(30000, 5000 * ++fails));
+        } else {
+          await markMany('photos', [next.key], e.message);
+        }
+      } finally {
+        SY.busyKeys.delete(next.key);
+      }
+      refreshCounts();
+    }
+  } catch (e) { /* phone storage problem: the next Sync now or timer tries again */ }
+  finally { SY.lanes--; refreshCounts(); }
+}
+
+/** A photo reached Drive: record the Drive link on the phone, then the item is re-sent with the link. */
+function photoArrived(rec, up) {
+  const fields = {};
+  FILE_FIELDS.forEach(f => { fields[f] = up[f]; });
+  return tx(['photos', 'items'], 'readwrite', async s => {
+    const p = await rq(s.photos.get(rec.key));
+    if (p) { p.uploaded = true; p.logged = true; p.err = ''; await rq(s.photos.put(p)); }
+    const it = await rq(s.items.get(itemKey(rec.insp, rec.itemId)));
+    if (!it) return null;
+    let found = false;
+    it.photos.forEach(x => { if (x.key === rec.key) { Object.assign(x, fields); found = true; } });
+    if (!found) return null;
+    it.rev = (it.rev || 0) + 1;
+    await rq(s.items.put(it));
+    return it;
+  }).then(it => {
+    if (it && S.insp && S.insp.InspectionID === rec.insp) {
+      const r = res(rec.itemId);
+      r.rev = Math.max(r.rev || 0, it.rev);
+      r.photos.forEach(x => { if (x.key === rec.key) Object.assign(x, fields); });
+      renderItem(rec.itemId);
+    }
+    kickSync();
+  });
+}
+
+async function dataLane() {
+  SY.dataBusy = true;
+  let fails = 0;
+  try {
+    while (true) {
+      SY.dataAgain = false;
+      const job = await nextDataJob();
+      if (!job) { if (SY.dataAgain) continue; break; }
+      try { await job.run(); SY.offline = false; fails = 0; }
+      catch (e) {
+        if (e.network || e.busy) {
+          if (e.network) SY.offline = true;
+          refreshCounts();
+          await pause(Math.min(30000, 5000 * ++fails));
+        } else {
+          await job.fail(e.message);
+        }
+      }
+      refreshCounts();
+    }
+  } catch (e) { }
+  finally { SY.dataBusy = false; refreshCounts(); }
+}
+
+async function nextDataJob() {
+  const [photos, items, insps] = await readAllMeta();
+
+  // 1. Tell the server about photos saved on the phone, so it records a time close to capture.
+  const unlogged = photos.filter(p => !p.logged && !p.uploaded && !p.err);
+  if (unlogged.length) {
+    const id = unlogged[0].insp, batch = unlogged.filter(p => p.insp === id).slice(0, 25);
+    return {
+      run: async () => {
+        await call('logPhotos', { id: id, data: { photos: batch.map(p => Object.assign({ key: p.key, itemId: p.itemId }, p.meta)) } });
+        await tx('photos', 'readwrite', async s => {
+          for (const b of batch) { const p = await rq(s.photos.get(b.key)); if (p) { p.logged = true; await rq(s.photos.put(p)); } }
+        });
+      },
+      fail: msg => markMany('photos', batch.map(p => p.key), msg)
+    };
+  }
+
+  // 2. Ratings, notes and photo links, once the item's photos are in Drive.
+  const notSent = new Set(photos.filter(p => !p.uploaded).map(p => p.key));
+  const dirty = items.filter(it => (it.rev || 0) > (it.saved || 0) && !it.err && it.photos.every(p => p.fileId || !notSent.has(p.key)));
+  if (dirty.length) {
+    const id = dirty[0].insp, batch = dirty.filter(it => it.insp === id).slice(0, 40);
+    return {
+      run: async () => {
+        const r = await call('saveItems', { id: id, data: { items: batch.map(it => ({ itemId: it.itemId, rating: it.rating, note: it.note,
+          photos: it.photos.filter(p => p.fileId).map(p => { const c = Object.assign({}, p); delete c.thumb; return c; }) })) } });
+        const failed = r.failed || {};
+        await tx('items', 'readwrite', async s => {
+          for (const b of batch) {
+            const it = await rq(s.items.get(b.k));
+            if (!it) continue;
+            if (failed[b.itemId]) it.err = failed[b.itemId]; else it.saved = Math.max(it.saved || 0, b.rev || 0);
+            await rq(s.items.put(it));
+          }
+        });
+      },
+      fail: msg => markMany('items', batch.map(it => it.k), msg)
+    };
+  }
+
+  // 3. Tenant comments.
+  const ins = insps.find(i => (i.commentsRev || 0) > (i.commentsSaved || 0) && !i.err);
+  if (ins) {
+    return {
+      run: async () => {
+        await call('saveHeader', { id: ins.id, data: { TenantComments: ins.comments || '' } });
+        await patchInsp(ins.id, i => { i.commentsSaved = Math.max(i.commentsSaved || 0, ins.commentsRev); });
+      },
+      fail: msg => patchInsp(ins.id, i => { i.err = msg; })
+    };
+  }
+  return null;
+}
+
+/* ---------- sync status ---------- */
+let countTimer = null;
+function refreshCounts() { clearTimeout(countTimer); countTimer = setTimeout(countNow, 150); }
+async function countNow() {
+  try {
+    const [photos, items, insps] = await readAllMeta();
+    const by = {};
+    const slot = id => by[id] || (by[id] = { photos: 0, changes: 0, errors: 0, firstError: '' });
+    const bad = (b, msg) => { b.errors++; if (!b.firstError) b.firstError = msg; };
+    photos.forEach(p => { if (p.uploaded) return; const b = slot(p.insp); if (p.err) bad(b, p.err); else b.photos++; });
+    items.forEach(it => { if ((it.rev || 0) <= (it.saved || 0)) return; const b = slot(it.insp); if (it.err) bad(b, it.err); else b.changes++; });
+    insps.forEach(i => { if ((i.commentsRev || 0) <= (i.commentsSaved || 0)) return; const b = slot(i.id); if (i.err) bad(b, i.err); else b.changes++; });
+    SY.by = by;
+  } catch (e) { }
+  setSync(); refreshFooter(); refreshSyncBoxes();
+}
+function syncInfo(id) {
+  const z = { photos: 0, changes: 0, errors: 0, firstError: '' };
+  if (id) return SY.by[id] || z;
+  Object.keys(SY.by).forEach(k => { const b = SY.by[k]; z.photos += b.photos; z.changes += b.changes; z.errors += b.errors; z.firstError = z.firstError || b.firstError; });
+  return z;
 }
 function setSync() {
-  const el = $('#sync');
-  if (!S.insp) { el.hidden = true; return; }
+  const el = $('#sync'), t = syncInfo(), n = t.photos + t.changes;
+  if (!S.pin || (!S.insp && !n && !t.errors) || S.view === 'done') { el.hidden = true; return; }
   el.hidden = false;
-  const n = S.queue.length;
-  if (!n) { el.textContent = 'All saved'; el.className = ''; }
-  else { el.textContent = (S.offline ? 'No signal, ' : 'Saving, ') + n + ' left'; el.className = S.offline ? 'warn' : ''; }
+  if (t.errors) { el.textContent = t.errors + ' not sent, tap'; el.className = 'warn'; }
+  else if (!n) { el.textContent = 'All synced'; el.className = ''; }
+  else if (SY.offline) { el.textContent = 'No signal, ' + n + ' waiting'; el.className = 'warn'; }
+  else { el.textContent = 'Sending ' + n; el.className = ''; }
 }
-window.addEventListener('beforeunload', e => { if (S.queue.length) { e.preventDefault(); e.returnValue = ''; } });
+function syncBox(id) {
+  const t = syncInfo(id), n = t.photos + t.changes;
+  if (!n && !t.errors) return '<div class="muted">All synced. Everything on this phone has reached the owner\'s Sheet and Drive.</div>';
+  const parts = [];
+  if (t.photos) parts.push(t.photos + (t.photos === 1 ? ' photo' : ' photos'));
+  if (t.changes) parts.push(t.changes + (t.changes === 1 ? ' change' : ' changes'));
+  let h = '';
+  if (parts.length) {
+    h += `<div class="muted">Saved on this phone, still to send: ${parts.join(' and ')}. ` +
+      (SY.offline ? 'No signal right now. It keeps trying.' : 'Sending now. Keep this page open and on screen.') + '</div>';
+  }
+  if (t.errors) h += `<div class="err">${t.errors} could not be sent: ${esc(t.firstError)}</div>`;
+  return h + '<button class="btn sec" data-act="sync">Sync now</button>';
+}
+function refreshSyncBoxes() {
+  document.querySelectorAll('[data-syncbox]').forEach(el => {
+    const id = el.dataset.syncbox || null, t = syncInfo(id);
+    if (el.dataset.quiet && !t.photos && !t.changes && !t.errors) { el.hidden = true; return; }
+    el.hidden = false;
+    el.innerHTML = syncBox(id);
+  });
+}
+window.addEventListener('online', () => { SY.offline = false; wake(); kickSync(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { wake(); kickSync(); refreshCounts(); } });
+setInterval(() => { if (S.pin) kickSync(); }, 20000);
 
 /* ---------- rules (same as the server) ---------- */
-function res(id) { return S.results[id] || (S.results[id] = { rating: '', note: '', photos: [] }); }
+function res(id) { return S.results[id] || (S.results[id] = { rating: '', note: '', photos: [], rev: 0 }); }
 function photoOnly(it) { return Number(it.min) >= 2; }
 function needPhotos(it, r) {
   let n = Number(it.min) || 0;
@@ -268,6 +652,7 @@ function rooms() {
 }
 function hint(it) {
   const r = res(it.id), h = [];
+  if (it.guide) h.push(it.guide);
   if (it.test) h.push('Test it works.');
   if (photoOnly(it)) h.push('Take ' + it.min + ' wide shots from opposite corners.');
   else if (it.photo) h.push('Photo required.');
@@ -296,13 +681,13 @@ function render() {
   $('#app').innerHTML = views[v]();
   if (v === 'sign') initSign();
   if (v === 'pin') { const p = $('#pin'); if (p) p.focus(); }
-  setSync(); refreshFooter();
+  setSync(); refreshFooter(); refreshSyncBoxes();
 }
 async function goBack(to) {
   if (to === 'home') {
-    if (S.queue.length) return toast('Wait until everything is saved before leaving this inspection.');
     S.insp = null; S.checklist = []; S.results = {}; local('set', 'resume', '');
-    await loadDrafts();
+    try { await loadDrafts(); }
+    catch (e) { if (e.network || e.glitch) await useLocalDrafts(); else toast(errText(e), 6000); }
   }
   go(to, to === 'rooms' ? { editStart: false } : {});
 }
@@ -319,10 +704,13 @@ function viewHome() {
   const drafts = S.drafts.length
     ? S.drafts.map(d => `<button class="link" data-act="draft" data-id="${esc(d.id)}"><b>${esc(d.type)}</b>, ${esc(d.tenant)}<br><span class="muted">Started ${esc(d.created)}. ${esc(d.id)}</span></button>`).join('')
     : '<div class="muted">No unfinished inspections.</div>';
-  return `<div class="card"><h2>Start</h2>
+  const offline = S.offlineMode
+    ? '<div class="card"><b>No signal</b><div class="muted">Showing inspections saved on this phone. Starting a new inspection needs signal.</div></div>' : '';
+  return `${offline}<div class="card"><h2>Start</h2>
       <div class="muted">Use for every move-in, lease renewal and move-out.</div>
       <button class="btn" data-act="newInsp">New inspection</button></div>
-    <div class="card"><h2>Continue an unfinished inspection</h2>${drafts}</div>`;
+    <div class="card"><h2>Continue an unfinished inspection</h2>${drafts}</div>
+    <div class="card" data-syncbox="" data-quiet="1" hidden></div>`;
 }
 
 function viewStart() {
@@ -337,8 +725,11 @@ function viewStart() {
     ${f('TenantEmail', 'Tenant email', 'email')}
     <div class="row2"><div>${f('WaterReading', 'Water meter', 'text', 'inputmode="decimal"')}</div>
       <div>${f('ElectricityReading', 'Electricity meter or units', 'text', 'inputmode="decimal"')}</div></div>
-    <div class="row2"><div>${f('KeysCount', 'Number of keys', 'number', 'inputmode="numeric" min="0"')}</div>
+    <div class="row2"><div>${f('KeysCount', 'Full key sets', 'number', 'inputmode="numeric" min="0"')}</div>
       <div>${f('RemotesCount', 'Number of remotes', 'number', 'inputmode="numeric" min="0"')}</div></div>
+    <div class="muted">2 full sets were given, including interior door keys. Each door key is checked in its room.</div>
+    ${f('AlarmCode', 'Current alarm code', 'text', 'inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false"')}
+    <div class="muted">Private. Saved to the owner's Sheet only. Not shown in the report or emails.</div>
     <div class="err" id="startErr"></div>
     <button class="btn" data-act="startGo">${S.editStart ? 'Save details' : 'Start inspection'}</button></div>`;
 }
@@ -353,6 +744,7 @@ function viewRooms() {
   return `<div class="card"><b>${esc(S.insp.TenantNames)}</b><div class="muted">${esc(S.insp.InspectionID)}</div>
       <div class="muted" style="margin-top:6px">${done} of ${total} items complete</div>
       <div class="bar"><i style="width:${total ? Math.round(done / total * 100) : 0}%"></i></div></div>
+    <div class="card" data-syncbox="${esc(S.insp.InspectionID)}" data-quiet="1" hidden></div>
     ${list}
     <button class="btn sec" data-act="editStart">Edit start details</button>`;
 }
@@ -384,8 +776,8 @@ function itemCard(it) {
     }
     h += '</div>';
   }
-  const uploading = photos.some(p => p.pending) ? ', photo uploading' : '';
-  h += `<div class="status">${pr ? esc(pr) : 'Done'}${uploading}</div></div>`;
+  const sending = photos.some(p => !p.fileId) ? '. Photo saved on phone, sending' : '';
+  h += `<div class="status">${pr ? esc(pr) : 'Done'}${sending}</div></div>`;
   return h;
 }
 function renderItem(id) {
@@ -408,8 +800,8 @@ function viewReview() {
   const c = { Good: 0, Wear: 0, Damage: 0 }; let photos = 0;
   S.checklist.forEach(it => { const r = res(it.id); if (c[r.rating] !== undefined) c[r.rating]++; photos += r.photos.length; });
   let h = `<div class="card"><h2>${S.checklist.length - open.length} of ${S.checklist.length} items complete</h2>
-    <div class="counts"><div><b>${c.Good}</b>Good</div><div><b>${c.Wear}</b>Wear</div><div><b>${c.Damage}</b>Damage</div><div><b>${photos}</b>Photos</div></div>
-    ${S.queue.length ? `<p class="muted">${S.queue.length} change(s) still saving.</p>` : ''}</div>`;
+    <div class="counts"><div><b>${c.Good}</b>Good</div><div><b>${c.Wear}</b>Wear</div><div><b>${c.Damage}</b>Damage</div><div><b>${photos}</b>Photos</div></div></div>
+    <div class="card" data-syncbox="${esc(S.insp.InspectionID)}"></div>`;
   if (open.length) {
     h += '<div class="card"><h2>Still to complete</h2>' + open.map(it =>
       `<button class="link" data-act="jump" data-id="${esc(it.id)}" data-room="${esc(it.room)}">${esc(it.room)}: ${esc(it.item)}<br><span class="muted">${esc(problem(it))}</span></button>`).join('') + '</div>';
@@ -425,7 +817,9 @@ function viewReview() {
 }
 
 function viewSign() {
-  return `<div class="card"><h2>Tenant comments</h2>
+  return `<div class="card"><h2>Sync</h2><div data-syncbox="${esc(S.insp.InspectionID)}"></div>
+      <div class="muted" style="margin-top:6px">You can sign now. Submit unlocks once everything has synced.</div></div>
+    <div class="card"><h2>Tenant comments</h2>
       <textarea id="sComments" placeholder="Anything the tenant wants recorded (optional)">${esc(S.sign.comments)}</textarea></div>
     <div class="card"><h2>Agent signature</h2><div class="muted">${esc(S.insp.AgentName)}</div>
       <canvas class="sig" id="sigAgent"></canvas><button class="small-btn" data-act="clearSig" data-v="agent">Clear</button></div>
@@ -462,15 +856,19 @@ function refreshFooter() {
     const m = signMissing();
     h = `<button class="btn" data-act="submit" ${m ? 'disabled' : ''}>${m ? esc(m) : 'Submit inspection'}</button>`;
   }
-  f.hidden = !h; f.innerHTML = h;
+  if (f._h !== h) { f.innerHTML = h; f._h = h; }
+  f.hidden = !h;
 }
 function signMissing() {
   const n = incomplete().length;
   if (n) return n + ' item(s) still to complete';
-  if (S.queue.length) return 'Waiting for saves to finish';
   if (!S.sig.agent) return 'Agent signature needed';
-  if (S.sign.declined) return S.sign.reason.trim() ? '' : 'Reason needed';
-  return S.sig.tenant ? '' : 'Tenant signature needed';
+  if (S.sign.declined) { if (!S.sign.reason.trim()) return 'Reason needed'; }
+  else if (!S.sig.tenant) return 'Tenant signature needed';
+  const t = syncInfo(S.insp.InspectionID);
+  if (t.errors) return 'Not all sent. Tap Sync now above';
+  if (t.photos + t.changes) return 'Waiting for ' + (t.photos + t.changes) + ' to sync. Keep page open';
+  return '';
 }
 
 /* ---------- events ---------- */
@@ -494,8 +892,9 @@ document.addEventListener('click', e => {
       go('room', { room: b.dataset.room });
       return setTimeout(() => { const el = document.getElementById('it-' + id); if (el) el.scrollIntoView({ block: 'center' }); }, 60);
     case 'sign': return go('sign');
-    case 'clearSig': S.sig[b.dataset.v] = null; initPad(b.dataset.v); return refreshFooter();
+    case 'clearSig': S.sig[b.dataset.v] = null; initPad(b.dataset.v); saveSignLocal(); return refreshFooter();
     case 'submit': return submitInspection();
+    case 'sync': return syncNow();
     case 'home': return goBack('home');
   }
 });
@@ -505,26 +904,63 @@ document.addEventListener('input', e => {
   res(id).note = e.target.value;
   updateStatus(id);
   clearTimeout(S.noteTimers[id]);
-  S.noteTimers[id] = setTimeout(() => queueSaveItem(id), 1200);
+  S.noteTimers[id] = setTimeout(() => saveItemLocal(id).catch(storageFail), 600);
 });
 document.addEventListener('change', e => {
   const id = e.target.dataset && e.target.dataset.note;
   if (!id) return;
   clearTimeout(S.noteTimers[id]);
-  queueSaveItem(id);
+  saveItemLocal(id).catch(storageFail);
 });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'pin') pinGo(); });
 
 /* ---------- PIN, home, start ---------- */
 async function pinGo() {
-  S.pin = ($('#pin').value || '').trim();
-  if (!S.pin) return;
-  try { await loadDrafts(); store('set', 'pin', S.pin); watchGps(); await resumeOrHome(); }
-  catch (e) { $('#pinErr').textContent = errText(e); }
+  const pin = ($('#pin').value || '').trim();
+  if (!pin) return;
+  S.pin = pin;
+  try {
+    await loadDrafts();
+    store('set', 'pin', pin);
+    local('set', 'pinHash', await pinHash(pin));
+  } catch (e) {
+    const saved = local('get', 'pinHash');
+    if ((e.network || e.glitch) && saved && saved === await pinHash(pin)) {
+      store('set', 'pin', pin);
+      await useLocalDrafts();
+    } else {
+      S.pin = '';
+      $('#pinErr').textContent = errText(e);
+      return;
+    }
+  }
+  watchGps(); await resumeOrHome();
 }
 async function loadDrafts() {
   const r = await call('listDrafts');
   S.drafts = r.drafts || [];
+  S.offlineMode = false;
+  await tidyLocal();
+}
+/** No signal: list the inspections saved on this phone instead. */
+async function useLocalDrafts() {
+  let list = [];
+  try { list = await localAllInsp(); } catch (e) { }
+  S.drafts = list.filter(i => i.inspection).map(i => ({ id: i.id, type: i.inspection.InspectionType, tenant: i.inspection.TenantNames, created: i.inspection.CreatedAt }));
+  S.offlineMode = true;
+}
+/** Clears phone copies of inspections that are no longer open, but only when nothing is left to send. */
+async function tidyLocal() {
+  try {
+    const open = new Set(S.drafts.map(d => d.id));
+    await countNow();
+    for (const i of await localAllInsp()) {
+      if (open.has(i.id)) continue;
+      const t = syncInfo(i.id);
+      if (!t.photos && !t.changes && !t.errors) await purgeLocal(i.id);
+    }
+    refreshCounts();
+  } catch (e) { }
 }
 function newInspection() {
   S.startDraft = { AgentName: local('get', 'agentName') || '', AgentEmail: local('get', 'agentEmail') || '' };
@@ -537,33 +973,47 @@ async function resumeOrHome() {
   try { rs = JSON.parse(local('get', 'resume') || 'null'); } catch (e) { }
   if (rs && rs.id && S.drafts.some(d => d.id === rs.id)) {
     try {
-      applyLoad(await call('load', { id: rs.id }));
+      await openInspection(rs.id);
       const hasRoom = rs.room && S.checklist.some(it => it.room === rs.room);
       go(hasRoom ? 'room' : 'rooms', hasRoom ? { room: rs.room } : {});
+      kickSync();
       return toast('Back in your inspection. Check the last item you were on.', 5000);
     } catch (e) { }
   }
   local('set', 'resume', '');
   go('home');
+  kickSync();
 }
 async function openDraft(id) {
   if (S.busy) return;
   S.busy = true; toast('Opening inspection');
-  try { applyLoad(await call('load', { id: id })); go('rooms'); watchGps(); }
+  try { await openInspection(id); go('rooms'); watchGps(); kickSync(); }
   catch (e) { alert(errText(e)); }
   S.busy = false;
 }
-function applyLoad(r) {
-  S.insp = r.inspection; S.checklist = r.checklist; S.results = {};
-  Object.keys(r.results || {}).forEach(k => {
-    const x = r.results[k];
-    S.results[k] = { rating: x.rating || '', note: x.note || '', photos: (x.photos || []).map(p => Object.assign({}, p, { pending: false })) };
-  });
-  S.sig = { agent: null, tenant: null };
-  S.sign = { declined: false, reason: '', comments: S.insp.TenantComments || '' };
+/** Loads the server copy when there is signal, merges it with the phone copy, and works from the phone copy. */
+async function openInspection(id) {
+  let r = null;
+  if (!S.offlineMode) {
+    try { r = await call('load', { id: id }); }
+    catch (e) { if (!(e.network || e.glitch)) throw e; }
+  }
+  if (r) await mergeServerCopy(r);
+  await openLocal(id, !r);
+}
+async function openLocal(id, noSignal) {
+  const rec = await localGetInsp(id);
+  if (!rec || !rec.inspection) throw new Error('No connection, and this inspection is not saved on this phone. Try again with signal.');
+  const items = await localItems(id);
+  S.insp = rec.inspection; S.checklist = rec.checklist || []; S.results = {};
+  items.forEach(it => { S.results[it.itemId] = { rating: it.rating || '', note: it.note || '', photos: it.photos || [], rev: it.rev || 0 }; });
+  S.sig = Object.assign({ agent: null, tenant: null }, rec.sig || {});
+  S.sign = Object.assign({ declined: false, reason: '' }, rec.sign || {}, { comments: rec.comments || '' });
+  if (noSignal) toast('No signal. Working from the copy saved on this phone.', 5000);
+  refreshCounts();
 }
 function collectStart() {
-  ['AgentName', 'AgentEmail', 'TenantNames', 'TenantEmail', 'WaterReading', 'ElectricityReading', 'KeysCount', 'RemotesCount']
+  ['AgentName', 'AgentEmail', 'TenantNames', 'TenantEmail', 'WaterReading', 'ElectricityReading', 'KeysCount', 'RemotesCount', 'AlarmCode']
     .forEach(k => { const el = $('#f_' + k); if (el) S.startDraft[k] = el.value.trim(); });
 }
 async function startGo() {
@@ -571,7 +1021,7 @@ async function startGo() {
   collectStart();
   const d = S.startDraft, err = $('#startErr');
   const labels = { InspectionType: 'Inspection type', AgentName: 'Agent name', AgentEmail: 'Agent email', TenantNames: 'Tenant name',
-    TenantEmail: 'Tenant email', WaterReading: 'Water meter', ElectricityReading: 'Electricity', KeysCount: 'Number of keys', RemotesCount: 'Number of remotes' };
+    TenantEmail: 'Tenant email', WaterReading: 'Water meter', ElectricityReading: 'Electricity', KeysCount: 'Full key sets', RemotesCount: 'Number of remotes', AlarmCode: 'Current alarm code' };
   const missing = Object.keys(labels).filter(k => !String(d[k] || '').trim());
   if (missing.length) { err.textContent = labels[missing[0]] + ' is required.'; return; }
   S.busy = true; err.textContent = '';
@@ -579,7 +1029,9 @@ async function startGo() {
   try {
     if (S.editStart) {
       const r = await call('saveHeader', { id: S.insp.InspectionID, data: d });
-      S.insp = r.inspection; S.busy = false;
+      S.insp = r.inspection;
+      await patchInsp(S.insp.InspectionID, i => { i.inspection = r.inspection; }).catch(() => { });
+      S.busy = false;
       return go('rooms', { editStart: false });
     }
     let gps = null;
@@ -589,13 +1041,15 @@ async function startGo() {
     }
     local('set', 'agentName', d.AgentName); local('set', 'agentEmail', d.AgentEmail);
     if (!S.startKey) S.startKey = newKey();
-    applyLoad(await call('start', { key: S.startKey, data: Object.assign({}, d, { gps: gps }) }));
+    const r = await call('start', { key: S.startKey, data: Object.assign({}, d, { gps: gps }) });
     S.startKey = '';
+    await mergeServerCopy(r);
+    await openLocal(r.inspection.InspectionID, false);
     S.busy = false;
     go('rooms');
   } catch (e) {
     S.busy = false; btn.disabled = false; btn.textContent = S.editStart ? 'Save details' : 'Start inspection';
-    err.textContent = errText(e);
+    err.textContent = e.network ? 'No connection. Starting or editing an inspection needs signal. Try again in a moment.' : errText(e);
   }
 }
 
@@ -604,25 +1058,14 @@ function setRating(id, v) {
   const r = res(id);
   r.rating = v;
   if (v === 'Good') r.note = '';
-  renderItem(id); queueSaveItem(id);
-}
-function queueSaveItem(id) {
-  const inspId = S.insp.InspectionID;
-  enqueue({
-    key: 'item:' + id,
-    run: () => {
-      const r = res(id);
-      const photos = r.photos.filter(p => p.fileId).map(p => {
-        const c = Object.assign({}, p); delete c.thumb; delete c.pending; delete c.local; return c;
-      });
-      return call('saveItem', { id: inspId, data: { itemId: id, rating: r.rating, note: r.note, photos: photos } });
-    }
-  });
+  renderItem(id);
+  saveItemLocal(id).catch(storageFail);
 }
 function removePhoto(id, i) {
-  if (!confirm("Remove this photo from the item? The original stays in the owner's Drive.")) return;
+  if (!confirm("Remove this photo from the item? A copy is still sent to the owner's Drive.")) return;
   res(id).photos.splice(i, 1);
-  renderItem(id); queueSaveItem(id);
+  renderItem(id);
+  saveItemLocal(id).catch(storageFail);
 }
 
 /* ---------- location ---------- */
@@ -646,11 +1089,9 @@ function getGps() {
 
 /* ---------- camera ---------- */
 async function takePhoto(id) {
+  if (S.busyPhoto) return;
   const it = S.checklist.find(x => x.id === id), r = res(id);
   if (r.photos.length >= CFG.maxPhotos) return toast('Maximum ' + CFG.maxPhotos + ' photos per item.');
-  if (S.queue.filter(t => t.photo).length >= 3) {
-    return toast('Photos are still uploading. Wait until the header says All saved, then take the next photo.', 6000);
-  }
   let shot;
   try { shot = await capture(); }
   catch (e) { if (e.message !== 'cancel') alert(e.message); return; }
@@ -661,35 +1102,36 @@ async function takePhoto(id) {
     if (CFG.requireGps) { alert('Location is needed to stamp the photo. Allow location for this page and turn on GPS, then take the photo again.'); return; }
   }
 
-  const base = shot.canvas;
-  stampOn(base, it, shot.takenAt, gps);
-  let full = base.toDataURL('image/jpeg', 0.82).split(',')[1];
-  const smallCanvas = scaleCanvas(base, base.width, base.height, 900);
-  freeCanvas(base);
-  let small = smallCanvas.toDataURL('image/jpeg', 0.7).split(',')[1];
-  const thumbCanvas = scaleCanvas(smallCanvas, smallCanvas.width, smallCanvas.height, 160);
-  freeCanvas(smallCanvas);
-  const thumb = thumbCanvas.toDataURL('image/jpeg', 0.6);
-  freeCanvas(thumbCanvas);
-  shot.canvas = null;
+  S.busyPhoto = true;
+  let p = null;
+  try {
+    const base = shot.canvas;
+    stampOn(base, it, shot.takenAt, gps);
+    const full = await canvasBuf(base, 0.82);
+    const smallCanvas = scaleCanvas(base, base.width, base.height, 900);
+    freeCanvas(base); shot.canvas = null;
+    const small = await canvasBuf(smallCanvas, 0.7);
+    const thumbCanvas = scaleCanvas(smallCanvas, smallCanvas.width, smallCanvas.height, 160);
+    freeCanvas(smallCanvas);
+    const thumb = thumbCanvas.toDataURL('image/jpeg', 0.6);
+    freeCanvas(thumbCanvas);
 
-  const photoKey = newKey();
-  const p = { thumb: thumb, pending: true, takenAt: shot.takenAt.toISOString(), takenAtText: fmtSA(shot.takenAt),
-    lat: gps ? gps.lat : null, lng: gps ? gps.lng : null, acc: gps ? gps.acc : null, gpsText: gpsText(gps), source: shot.source };
-  r.photos.push(p);
-  renderItem(id);
-
-  const inspId = S.insp.InspectionID;
-  enqueue({
-    photo: true,
-    run: async () => {
-      const up = await call('uploadPhoto', { id: inspId, key: photoKey, data: { itemId: id, full: full, small: small, takenAt: p.takenAt } });
-      full = null; small = null;
-      Object.assign(p, up, { pending: false });
-      renderItem(id);
-      queueSaveItem(id);
-    }
-  });
+    const key = newKey();
+    const meta = {
+      key: key, name: String(id).replace(/[^\w-]/g, '') + '_' + fileStamp(shot.takenAt) + '_' + key.slice(-4) + '.jpg',
+      hash: await sha256Hex(full), takenAt: shot.takenAt.toISOString(), takenAtText: fmtSA(shot.takenAt),
+      lat: gps ? gps.lat : null, lng: gps ? gps.lng : null, acc: gps ? gps.acc : null, gpsText: gpsText(gps), source: shot.source
+    };
+    p = Object.assign({ thumb: thumb }, meta);
+    r.photos.push(p);
+    await saveItemLocal(id, { meta: meta, full: full, small: small });
+    renderItem(id);
+  } catch (e) {
+    if (p) { r.photos = r.photos.filter(x => x !== p); renderItem(id); }
+    storageFail(e);
+  } finally {
+    S.busyPhoto = false;
+  }
 }
 
 function capture() {
@@ -865,20 +1307,26 @@ function stampOn(c, it, when, gps) {
 function initSign() {
   initPad('agent');
   if (!S.sign.declined) initPad('tenant');
-  $('#sComments').addEventListener('change', e => {
+  const box = $('#sComments');
+  box.addEventListener('input', e => {
     S.sign.comments = e.target.value;
-    const inspId = S.insp.InspectionID, text = e.target.value;
-    enqueue({ key: 'comments', run: () => call('saveHeader', { id: inspId, data: { TenantComments: text } }) });
+    clearTimeout(S.noteTimers.comments);
+    S.noteTimers.comments = setTimeout(saveCommentsLocal, 800);
   });
-  $('#sComments').addEventListener('input', e => { S.sign.comments = e.target.value; });
+  box.addEventListener('change', e => {
+    S.sign.comments = e.target.value;
+    clearTimeout(S.noteTimers.comments);
+    saveCommentsLocal();
+  });
   $('#sDeclined').addEventListener('change', e => {
     S.sign.declined = e.target.checked;
     $('#tenantPad').hidden = S.sign.declined;
     $('#reasonBox').hidden = !S.sign.declined;
     if (!S.sign.declined) initPad('tenant');
+    saveSignLocal();
     refreshFooter();
   });
-  $('#sReason').addEventListener('input', e => { S.sign.reason = e.target.value; refreshFooter(); });
+  $('#sReason').addEventListener('input', e => { S.sign.reason = e.target.value; saveSignLocal(); refreshFooter(); });
 }
 
 function initPad(key) {
@@ -910,7 +1358,7 @@ function initPad(key) {
     ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
     last = p;
   };
-  const end = () => { if (!drawing) return; drawing = false; S.sig[key] = canvas.toDataURL('image/png'); refreshFooter(); };
+  const end = () => { if (!drawing) return; drawing = false; S.sig[key] = canvas.toDataURL('image/png'); saveSignLocal(); refreshFooter(); };
   canvas.onpointerup = end; canvas.onpointercancel = end; canvas.onpointerleave = end;
 }
 
@@ -918,18 +1366,21 @@ async function submitInspection() {
   const miss = signMissing();
   if (miss) return toast(miss);
   if (!confirm('Submit now? Once submitted, this inspection is locked and cannot be changed.')) return;
+  const id = S.insp.InspectionID;
   const ov = overlay('<h2>Submitting</h2><p>Building the report with all photos. This can take a minute or two. Keep this page open.</p>');
   try {
-    const r = await call('submit', { id: S.insp.InspectionID, data: {
+    const r = await call('submit', { id: id, data: {
       tenantComments: S.sign.comments, agentSig: S.sig.agent, tenantSig: S.sign.declined ? '' : S.sig.tenant,
       tenantDeclined: S.sign.declined, declineReason: S.sign.reason } });
     ov.remove();
     S.insp.Status = 'Submitted';
     local('set', 'resume', '');
+    await purgeLocal(id);
+    refreshCounts();
     go('done', { doneInfo: r });
   } catch (e) {
     ov.remove();
-    alert(e.network ? 'Could not confirm the submit. Nothing is lost. Check signal and tap Submit again. If it was already submitted, it will say so.' : 'Not submitted: ' + e.message);
+    alert(e.network ? 'Could not confirm the submit. Nothing is lost, it is all still on this phone. Check signal and tap Submit again. If it was already submitted, it will say so.' : 'Not submitted: ' + e.message);
   }
 }
 
@@ -937,26 +1388,44 @@ window.addEventListener('error', e => toast('Something went wrong: ' + e.message
 
 /* ---------- start ---------- */
 (async function init() {
-  const PAGE_VERSION = '2026-09-15i';
   if (API_URL.indexOf('https://script.google.com/') !== 0 || !/\/exec$/.test(API_URL)) {
     return showStartupProblem('The Web app URL is not set. In GitHub, check there is a file called config.js next to index.html, with your URL ending in /exec between the quotes. Commit, wait a few minutes, then reload.');
   }
-  let cfg;
+  try { await tx('insp', 'readonly', s => rq(s.insp.count())); }
+  catch (e) {
+    return showStartupProblem('This browser cannot save photos on the phone, so the form cannot run. Use Chrome (Android) or Safari (iPhone) in a normal tab, not a private or incognito tab. Details: ' + ((e && e.message) || e));
+  }
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => { }); } catch (e) { }
+
+  let cfg = null, noSignal = false;
   try { cfg = await call('config'); }
   catch (e) {
-    return showStartupProblem(e.glitch
-      ? 'Google did not send an answer back after several tries. Reload the page. ' + e.message
-      : e.network
-        ? 'Could not reach the script. Check signal, then reload. If this keeps happening, check the URL in config.js and that the deployment has access set to Anyone.'
-        : 'Could not load settings from the script. ' + e.message);
+    let cached = null;
+    try { cached = JSON.parse(local('get', 'cfg') || 'null'); } catch (x) { }
+    if ((e.network || e.glitch) && cached && cached.version === PAGE_VERSION) { cfg = cached; noSignal = true; }
+    else {
+      return showStartupProblem(e.glitch
+        ? 'Google did not send an answer back after several tries. Reload the page. ' + e.message
+        : e.network
+          ? 'Could not reach the script. Check signal, then reload. If this keeps happening, check the URL in config.js and that the deployment has access set to Anyone.'
+          : 'Could not load settings from the script. ' + e.message);
+    }
   }
   if (!cfg || cfg.version !== PAGE_VERSION) {
     return showStartupProblem('Code.gs and index.html are from different versions (script: ' +
       ((cfg && cfg.version) || 'old') + ', page: ' + PAGE_VERSION + '). Update both: deploy a new version in Apps Script and commit index.html in GitHub. GitHub can take up to 10 minutes to show a change, so wait, then close this tab and open the link again.');
   }
+  if (!noSignal) local('set', 'cfg', JSON.stringify(cfg));
   Object.assign(CFG, cfg);
+  refreshCounts();
   if (S.pin) {
-    try { await loadDrafts(); watchGps(); return resumeOrHome(); } catch (e) { S.pin = ''; }
+    try { await loadDrafts(); }
+    catch (e) {
+      if (e.network || e.glitch) await useLocalDrafts();
+      else { S.pin = ''; store('set', 'pin', ''); return go('pin'); }
+    }
+    watchGps();
+    return resumeOrHome();
   }
   go('pin');
 })();
