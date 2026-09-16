@@ -727,7 +727,7 @@ function viewStart() {
       <div>${f('ElectricityReading', 'Electricity meter or units', 'text', 'inputmode="decimal"')}</div></div>
     <div class="row2"><div>${f('KeysCount', 'Full key sets', 'number', 'inputmode="numeric" min="0"')}</div>
       <div>${f('RemotesCount', 'Number of remotes', 'number', 'inputmode="numeric" min="0"')}</div></div>
-    <div class="muted">2 full sets were given, including interior door keys. Each door key is checked in its room.</div>
+    <div class="muted">2 full sets were given, including interior door and shutter keys. Each key is checked on the item it opens.</div>
     ${f('AlarmCode', 'Current alarm code', 'text', 'inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false"')}
     <div class="muted">Private. Saved to the owner's Sheet only. Not shown in the report or emails.</div>
     <div class="err" id="startErr"></div>
